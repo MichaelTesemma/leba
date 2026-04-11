@@ -54,6 +54,27 @@ export default function Player() {
   const [livePeers, setLivePeers] = useState<Record<string, { numPeers: number; downloadSpeed: number }>>({});
   const livePeerTimer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
+  // Group sources by resolution for quality picker
+  const qualityGroups = useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const groups: Record<string, any[]> = {};
+    const order = ["4K", "1080p", "720p", "480p"];
+    for (const group of order) groups[group] = [];
+    groups["Other"] = [];
+    for (const s of sources) {
+      const tag = s.tags?.find((t: string) => ["4K", "1080p", "720p", "480p"].includes(t));
+      (groups[tag || "Other"] ?? groups["Other"]).push(s);
+    }
+    // Sort each group by score descending
+    for (const g of Object.values(groups)) g.sort((a: any, b: any) => b.score - a.score);
+    return groups;
+  }, [sources]);
+
+  const currentQuality = useMemo(() => {
+    const tag = tags?.find((t: string) => ["4K", "1080p", "720p", "480p"].includes(t));
+    return tag || "Auto";
+  }, [tags]);
+
   // Fetch sources for current content
   useEffect(() => {
     if (!state?.title) return;
@@ -585,16 +606,32 @@ export default function Player() {
         </button>
       )}
 
+      {sources.length > 1 && (
+        <button
+          className="player-quality-btn"
+          onClick={(e) => { e.stopPropagation(); setShowSources(!showSources); }}
+          title="Switch quality"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 12H9.5v-2h-2v2H6V9h1.5v2.5h2V9H11v6zm7-1.5h-4.5V11H18v1.5h-4.5V14H18v1.5z" />
+          </svg>
+          <span className="player-quality-btn-label">{currentQuality}</span>
+        </button>
+      )}
+
       {showSources && sources.length > 1 && (
         <div className="player-sources-overlay" onClick={() => setShowSources(false)}>
           <div className="player-sources-panel" onClick={(e) => e.stopPropagation()}>
             <div className="player-sources-header">
-              <h3>Switch Source</h3>
+              <h3>Quality</h3>
               <button className="player-sources-close" onClick={() => setShowSources(false)}>&#10005;</button>
             </div>
             <div className="player-sources-list">
-              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-              {sources.map((s: any) => {
+              {Object.entries(qualityGroups).filter(([, group]) => group.length > 0).map(([group, groupSources]) => (
+                <div key={group} className="player-sources-group">
+                  <div className="player-sources-group-label">{group}</div>
+                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                  {groupSources.map((s: any) => {
                 const isCurrent = s.infoHash === active?.infoHash;
                 const live = isCurrent ? livePeers[s.infoHash] : null;
                 const isSwitching = switchingSource === s.infoHash;
@@ -629,6 +666,8 @@ export default function Player() {
                   </button>
                 );
               })}
+                </div>
+              ))}
             </div>
           </div>
         </div>

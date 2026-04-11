@@ -361,6 +361,55 @@
   50% { opacity: 0.4; }
 }
 
+/* ── Quality toggle button ── */
+.player-quality-btn {
+  position: absolute;
+  bottom: 80px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.75);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 600;
+  transition: background var(--transition);
+}
+
+.player-quality-btn:hover {
+  background: rgba(0, 0, 0, 0.9);
+  border-color: var(--accent);
+}
+
+.player-quality-btn-label {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+/* ── Quality groups in sources panel ── */
+.player-sources-group {
+  margin-bottom: 8px;
+}
+
+.player-sources-group-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 4px 14px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 4px;
+}
+
 /* ── Browser video fallback — Artplayer container ── */
 .player-art-container {
   position: absolute;
