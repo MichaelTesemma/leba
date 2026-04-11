@@ -128,13 +128,30 @@ function isRemoteSafeRoute(req: Request): boolean {
   return false;
 }
 
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "http://localhost:5173",   // Vite dev server
+  "http://127.0.0.1:5173",
+  "null",                     // Electron file:// protocol
+];
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  if (!origin) return false;
+  return ALLOWED_ORIGINS.includes(origin);
+}
+
 export function createApiAccessControl(ctx: ServerContext): RequestHandler {
   return (req, res, next) => {
-    // Add CORS headers for all requests
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Add CORS headers — restricted to trusted local origins only
+    const origin = req.headers.origin;
+    if (isAllowedOrigin(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin || "");
+    }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range, X-Leba-RC-Token");
     res.setHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type");
+    res.setHeader("Access-Control-Max-Age", "86400"); // 24h cache for preflight
 
     // Handle preflight OPTIONS requests
     if (req.method === "OPTIONS") {

@@ -53,9 +53,9 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
 
   // ── Persistent storage ──────────────────────────────────────────────
   const profileDir = dataDir();
-  const watchHistoryStore = new JsonStore<WatchRecord>(path.join(profileDir, "watch-history.json"));
+  const watchHistoryStore = new JsonStore<WatchRecord>(path.join(profileDir, "watch-history.json"), 5000, log);
   const watchHistory = new WatchHistory(watchHistoryStore);
-  const savedListStore = new JsonStore<SavedItem>(path.join(profileDir, "saved-list.json"));
+  const savedListStore = new JsonStore<SavedItem>(path.join(profileDir, "saved-list.json"), 5000, log);
   const savedList = new SavedList(savedListStore);
 
   // Stable token generated once per server start. After the PC passes nginx

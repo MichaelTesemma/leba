@@ -20,6 +20,10 @@ export default function storageRoutes(app: Express, ctx: ServerContext): void {
 
   // Accept both PUT (normal) and POST (sync XHR on unmount)
   function handleProgress(req: Request, res: Response) {
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+      res.status(400).json({ error: "invalid_body" });
+      return;
+    }
     const { tmdbId, mediaType, title, posterPath, season, episode, episodeTitle, seasonEpisodeCount, seasonCount, position, duration, imdbId, year } = req.body;
     if (!tmdbId || !mediaType || !title || position == null) {
       res.status(400).json({ error: "missing_fields" });
@@ -35,6 +39,11 @@ export default function storageRoutes(app: Express, ctx: ServerContext): void {
     }
     const pos = Number(position);
     const dur = Number(duration || 0);
+    // Validate position and duration are sane values
+    if (pos < 0 || dur < 0 || !isFinite(pos) || !isFinite(dur)) {
+      res.status(400).json({ error: "invalid_progress" });
+      return;
+    }
     watchHistory.recordProgress({
       tmdbId: Number(tmdbId),
       mediaType,

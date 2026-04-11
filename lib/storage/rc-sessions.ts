@@ -21,7 +21,9 @@ export function dumpRcSessions(rcSessions: Map<string, RCSession>): void {
     const entries = best ? [best] : [];
     mkdirSync(path.dirname(RC_SESSIONS_PATH), { recursive: true });
     writeFileSync(RC_SESSIONS_PATH, JSON.stringify(entries));
-  } catch {}
+  } catch (err) {
+    console.error(`[rc-sessions] Dump failed: ${(err as Error).message}`);
+  }
 }
 
 export function restoreRcSessions(rcSessions: Map<string, RCSession>): void {
@@ -39,5 +41,10 @@ export function restoreRcSessions(rcSessions: Map<string, RCSession>): void {
         });
       }
     }
-  } catch {}
+  } catch (err) {
+    // File may not exist — not fatal
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[rc-sessions] Restore failed: ${(err as Error).message}`);
+    }
+  }
 }

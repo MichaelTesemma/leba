@@ -114,6 +114,21 @@ export default function Detail() {
     return name;
   }
 
+  if (!data) {
+    return (
+      <div className="detail">
+        <div className="detail-backdrop skeleton" style={{ height: "60vh" }} />
+      </div>
+    );
+  }
+
+  const title = data.title || data.name;
+  const year = (data.release_date || data.first_air_date || "").slice(0, 4);
+  const runtime = data.runtime ? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}m` : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const seasons = data.seasons?.filter((s: any) => s.season_number > 0);
+  const genres = data.genres || [];
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function sendRemoteStart(result: any, tags: string[], season?: number, episode?: number) {
     const title = displayTitle(season, episode);
@@ -227,22 +242,6 @@ export default function Detail() {
       setPlayError((err as Error).message);
     }
   }
-
-  if (!data) {
-    return (
-      <div className="detail">
-        <div className="detail-backdrop skeleton" style={{ height: "60vh" }} />
-      </div>
-    );
-  }
-
-  const title = data.title || data.name;
-  const year = (data.release_date || data.first_air_date || "").slice(0, 4);
-  const runtime = data.runtime ? `${Math.floor(data.runtime / 60)}h ${data.runtime % 60}m` : null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const seasons = data.seasons?.filter((s: any) => s.season_number > 0);
-  const genres = data.genres || [];
-
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const trailer = (data.videos?.results || []).find(

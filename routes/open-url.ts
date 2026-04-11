@@ -1,8 +1,8 @@
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import type { Express, Request, Response } from "express";
 import type { ServerContext } from "../lib/types.js";
 
-export default function openUrlRoutes(app: Express, _ctx: ServerContext): void {
+export default function openUrlRoutes(app: Express, ctx: ServerContext): void {
   app.post("/api/open-url", (req: Request, res: Response) => {
     const { url } = req.body as { url?: string };
 
@@ -11,17 +11,15 @@ export default function openUrlRoutes(app: Express, _ctx: ServerContext): void {
       return;
     }
 
-    // Use the platform's default browser
-    // Windows: "start" needs empty title ("") and windowsHide to suppress cmd flash
-    const quoted = JSON.stringify(url);
-    const cmd = process.platform === "darwin"
-      ? `open ${quoted}`
+    // Use the platform's default browser — execFile avoids shell injection
+    const [cmd, args] = process.platform === "darwin"
+      ? ["open", [url]]
       : process.platform === "win32"
-        ? `start "" ${quoted}`
-        : `xdg-open ${quoted}`;
+        ? ["cmd", ["/c", "start", url]]
+        : ["xdg-open", [url]];
 
-    exec(cmd, { windowsHide: true }, (err) => {
-      if (err) console.error("[open-url] Failed to open:", err.message);
+    execFile(cmd, args, { windowsHide: true }, (err) => {
+      if (err) ctx.log("warn", "Failed to open URL", { error: err.message, url });
     });
 
     res.json({ ok: true });

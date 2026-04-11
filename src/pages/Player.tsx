@@ -517,9 +517,9 @@ export default function Player() {
       .then(({ ip, port }) => setReconnectOrigin(ip ? `http://${ip}:${port}` : window.location.origin))
       .catch(() => setReconnectOrigin(window.location.origin));
   }, [showReconnectQr]);
-  const [reconnectQrSvg, setReconnectQrSvg] = useState<string | null>(null);
+  const [reconnectQrModules, setReconnectQrModules] = useState<{ total: number; rects: { x: number; y: number }[] } | null>(null);
   useEffect(() => {
-    if (!showReconnectQr || !reconnectOrigin) { setReconnectQrSvg(null); return; }
+    if (!showReconnectQr || !reconnectOrigin) { setReconnectQrModules(null); return; }
     let cancelled = false;
     const url = `${reconnectOrigin}/api/rc/auth?session=${rcSessionId}&token=${rcAuthToken}`;
     import("uqr").then(({ encode }) => {
@@ -529,13 +529,16 @@ export default function Player() {
         const mod = 3;
         const margin = 4;
         const total = size * mod + margin * 2;
-        let paths = "";
-        for (let y = 0; y < size; y++)
-          for (let x = 0; x < size; x++)
-            if (data[y][x])
-              paths += `M${margin + x * mod},${margin + y * mod}h${mod}v${mod}h-${mod}z`;
-        setReconnectQrSvg(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}"><rect width="${total}" height="${total}" fill="#fff" rx="4"/><path d="${paths}" fill="#000"/></svg>`);
-      } catch { setReconnectQrSvg(null); }
+        const rects: { x: number; y: number }[] = [];
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            if (data[y][x]) {
+              rects.push({ x: margin + x * mod, y: margin + y * mod });
+            }
+          }
+        }
+        if (!cancelled) setReconnectQrModules({ total, rects });
+      } catch { setReconnectQrModules(null); }
     });
     return () => { cancelled = true; };
   }, [showReconnectQr, reconnectOrigin, rcSessionId, rcAuthToken]);
@@ -631,10 +634,17 @@ export default function Player() {
         </div>
       )}
 
-      {showReconnectQr && reconnectQrSvg && (
+      {showReconnectQr && reconnectQrModules && (
         <div className="player-reconnect-qr-overlay" onClick={(e) => e.stopPropagation()}>
           <div className="player-reconnect-qr-card">
-            <div className="player-reconnect-qr-inner" dangerouslySetInnerHTML={{ __html: reconnectQrSvg }} />
+            <div className="player-reconnect-qr-inner">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${reconnectQrModules.total} ${reconnectQrModules.total}`}>
+                <rect width={reconnectQrModules.total} height={reconnectQrModules.total} fill="#fff" rx="4" />
+                {reconnectQrModules.rects.map((r, i) => (
+                  <rect key={i} x={r.x} y={r.y} width="3" height="3" fill="#000" />
+                ))}
+              </svg>
+            </div>
             <span className="player-reconnect-qr-label">Scan to reconnect remote</span>
           </div>
         </div>

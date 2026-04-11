@@ -10,6 +10,36 @@ import {
 } from "../lib/media/transcode.js";
 import type { ServerContext } from "../lib/types.js";
 
+/**
+ * Validate that a URL is safe to proxy — rejects internal/private IPs and dangerous schemes.
+ */
+function isSafeProxyUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    // Only allow http/https
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Reject localhost and loopback
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return false;
+
+    // Reject private/internal IP ranges
+    if (/^10\./.test(hostname)) return false;
+    if (/^192\.168\./.test(hostname)) return false;
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) return false;
+    if (/^169\.254\./.test(hostname)) return false; // link-local
+    if (/^0\./.test(hostname)) return false; // 0.0.0.0/8
+
+    // Reject dangerous schemes already caught by protocol check above
+    if (hostname === "0.0.0.0") return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function streamRoutes(app: Express, ctx: ServerContext): void {
   const {
     log, diskPath, isFileComplete, streamTracking,
@@ -127,6 +157,12 @@ export default function streamRoutes(app: Express, ctx: ServerContext): void {
     if (!activeStream) return res.status(404).json({ error: "stream not found" });
 
     const { url } = activeStream;
+
+    // SSRF protection: validate URL before proxying
+    if (!isSafeProxyUrl(url)) {
+      log("warn", "Blocked unsafe debrid stream URL", { url });
+      return res.status(400).json({ error: "Invalid stream URL" });
+    }
 
     const seekTo = parseFloat(req.query.t as string) || 0;
     const audioStreamIdx = req.query.audio ? parseInt(req.query.audio as string, 10) : null;

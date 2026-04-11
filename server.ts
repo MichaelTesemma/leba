@@ -13,7 +13,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
   try {
     const { config } = await import("dotenv");
     config({ path: path.join(__dirname, ".env") });
-  } catch {}
+  } catch (err) {
+    // .env file is optional — not fatal
+    if ((err as NodeJS.ErrnoException).code !== "MODULE_NOT_FOUND" && (err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[${new Date().toISOString().slice(11, 23)}] WARN  Failed to load .env: ${(err as Error).message}`);
+    }
+  }
 })();
 import { sessionsPath, downloadDir } from "./lib/storage/paths.js";
 import { dumpRcSessions, restoreRcSessions } from "./lib/storage/rc-sessions.js";
@@ -176,7 +181,9 @@ const _diskJanitor = setInterval(() => {
     const st = streamTracker.get(t.infoHash);
     return st && st.count > 0;
   }).map((t) => t.infoHash));
-  evictIfLowSpace(ctx.DOWNLOAD_PATH, activeHashes, log).catch(() => {});
+  evictIfLowSpace(ctx.DOWNLOAD_PATH, activeHashes, log).catch((err) => {
+    log("err", "Disk janitor error", { error: err.message });
+  });
 }, 60 * 1000);
 if (_diskJanitor.unref) _diskJanitor.unref();
 
@@ -230,7 +237,9 @@ function dumpSessions(client: ServerContext["client"]): void {
     }));
     mkdirSync(path.dirname(SESSIONS_PATH), { recursive: true });
     writeFileSync(SESSIONS_PATH, JSON.stringify(sessions));
-  } catch {}
+  } catch (err) {
+    console.error(`[${new Date().toISOString().slice(11, 23)}] WARN  Session dump failed: ${(err as Error).message}`);
+  }
 }
 
 function restoreSessions(client: ServerContext["client"], downloadPath: string): void {
@@ -243,7 +252,12 @@ function restoreSessions(client: ServerContext["client"], downloadPath: string):
       }
     }
     writeFileSync(SESSIONS_PATH, "[]");
-  } catch {}
+  } catch (err) {
+    // Session file may not exist or be corrupted — not fatal
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.error(`[${new Date().toISOString().slice(11, 23)}] WARN  Session restore failed: ${(err as Error).message}`);
+    }
+  }
 }
 
 if (isMain) {

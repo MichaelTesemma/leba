@@ -118,22 +118,40 @@ interface TorrentFileForServe {
 }
 
 /**
+ * Parse and validate HTTP Range header. Returns validated [start, end] or null if invalid.
+ */
+function parseRange(range: string, fileSize: number): { start: number; end: number } | null {
+  const parts = range.replace(/bytes=/, "").split("-");
+  const start = parseInt(parts[0], 10);
+  const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+  // Validate: must be finite, non-negative, start <= end, within file bounds
+  if (isNaN(start) || isNaN(end) || start < 0 || end < 0 || start > end || start >= fileSize) {
+    return null;
+  }
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
+/**
  * Serve a complete file from disk with proper range support.
  */
 export function serveFile(filePath: string, fileSize: number, contentType: string, req: Request, res: Response): void {
   const range = req.headers.range;
   if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+    const parsed = parseRange(range, fileSize);
+    if (!parsed) {
+      res.writeHead(416, { "Content-Range": `bytes */${fileSize}` });
+      res.end("Range Not Satisfiable");
+      return;
+    }
     res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${fileSize}`,
+      "Content-Range": `bytes ${parsed.start}-${parsed.end}/${fileSize}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": end - start + 1,
+      "Content-Length": parsed.end - parsed.start + 1,
       "Content-Type": contentType,
       "X-Accel-Buffering": "no",
     });
-    const s = createReadStream(filePath, { start, end });
+    const s = createReadStream(filePath, { start: parsed.start, end: parsed.end });
     s.on("error", () => s.destroy());
     res.on("close", () => s.destroy());
     s.pipe(res);
@@ -152,29 +170,55 @@ export function serveFile(filePath: string, fileSize: number, contentType: strin
 }
 
 /**
+ * Track active readers per file to avoid deselecting while streams are active.
+ */
+const _activeReaders = new Map<object, number>();
+
+/**
  * Stream from WebTorrent (still downloading, native format).
- * Deselects file before creating the stream so the FileIterator's internal
- * selection (priority 1) becomes the sole active selection.
+ * Only deselects the file when no active readers remain, preventing
+ * race conditions with concurrent streams of the same file.
  */
 export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: Response): void {
   const range = req.headers.range;
   const size = file.length;
-  file.deselect();
-  res.on("close", () => { try { file.select(); } catch {} });
+
+  // Track active readers — only deselect when count goes from 0→1
+  const readerCount = _activeReaders.get(file) || 0;
+  _activeReaders.set(file, readerCount + 1);
+  if (readerCount === 0) {
+    file.deselect();
+  }
+
+  // Decrement on close — re-select when count goes to 0
+  const onEnd = () => {
+    const count = _activeReaders.get(file) || 0;
+    if (count <= 1) {
+      _activeReaders.delete(file);
+      try { file.select(); } catch {}
+    } else {
+      _activeReaders.set(file, count - 1);
+    }
+  };
+
   if (range) {
-    const parts = range.replace(/bytes=/, "").split("-");
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : size - 1;
+    const parsed = parseRange(range, size);
+    if (!parsed) {
+      onEnd();
+      res.writeHead(416, { "Content-Range": `bytes */${size}` });
+      res.end("Range Not Satisfiable");
+      return;
+    }
     res.writeHead(206, {
-      "Content-Range": `bytes ${start}-${end}/${size}`,
+      "Content-Range": `bytes ${parsed.start}-${parsed.end}/${size}`,
       "Accept-Ranges": "bytes",
-      "Content-Length": end - start + 1,
+      "Content-Length": parsed.end - parsed.start + 1,
       "Content-Type": "video/mp4",
       "X-Accel-Buffering": "no",
     });
-    const s = file.createReadStream({ start, end });
-    s.on("error", () => s.destroy());
-    res.on("close", () => s.destroy());
+    const s = file.createReadStream({ start: parsed.start, end: parsed.end });
+    s.on("error", () => { s.destroy(); onEnd(); });
+    res.on("close", () => { s.destroy(); onEnd(); });
     s.pipe(res);
   } else {
     res.writeHead(200, {
@@ -184,8 +228,8 @@ export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: R
       "X-Accel-Buffering": "no",
     });
     const s = file.createReadStream();
-    s.on("error", () => s.destroy());
-    res.on("close", () => s.destroy());
+    s.on("error", () => { s.destroy(); onEnd(); });
+    res.on("close", () => { s.destroy(); onEnd(); });
     s.pipe(res);
   }
 }

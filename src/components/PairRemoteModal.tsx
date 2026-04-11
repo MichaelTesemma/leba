@@ -77,18 +77,21 @@ export default function PairRemoteModal({ onClose }: PairRemoteModalProps) {
     setRemoteUrl("");
   }
 
-  const qrSvg = useMemo(() => {
+  const qrModules = useMemo(() => {
     if (!remoteUrl) return null;
     const { data, size } = encode(remoteUrl, { ecc: "L" });
     const mod = 3;
     const margin = 4;
     const total = size * mod + margin * 2;
-    let paths = "";
-    for (let y = 0; y < size; y++)
-      for (let x = 0; x < size; x++)
-        if (data[y][x])
-          paths += `M${margin + x * mod},${margin + y * mod}h${mod}v${mod}h-${mod}z`;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${total} ${total}"><rect width="${total}" height="${total}" fill="#fff" rx="4"/><path d="${paths}" fill="#000"/></svg>`;
+    const rects: { x: number; y: number }[] = [];
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        if (data[y][x]) {
+          rects.push({ x: margin + x * mod, y: margin + y * mod });
+        }
+      }
+    }
+    return { total, rects };
   }, [remoteUrl]);
 
   function copyUrl() {
@@ -98,7 +101,7 @@ export default function PairRemoteModal({ onClose }: PairRemoteModalProps) {
     }).catch(() => {});
   }
 
-  const showQr = sessionId && authToken && !validating;
+  const showQr = sessionId && authToken && !validating && qrModules;
 
   return (
     <div className="pair-overlay" onClick={onClose}>
@@ -128,8 +131,15 @@ export default function PairRemoteModal({ onClose }: PairRemoteModalProps) {
         ) : (
           <div className="pair-body">
             <p className="pair-desc">Scan with your phone to connect as a remote:</p>
-            {qrSvg && (
-              <div className="pair-qr" dangerouslySetInnerHTML={{ __html: qrSvg }} />
+            {qrModules && (
+              <div className="pair-qr">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox={`0 0 ${qrModules.total} ${qrModules.total}`}>
+                  <rect width={qrModules.total} height={qrModules.total} fill="#fff" rx="4" />
+                  {qrModules.rects.map((r, i) => (
+                    <rect key={i} x={r.x} y={r.y} width="3" height="3" fill="#000" />
+                  ))}
+                </svg>
+              </div>
             )}
             <div className="pair-url-box">
               <code className="pair-url">{remoteUrl}</code>

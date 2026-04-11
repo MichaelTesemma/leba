@@ -1,6 +1,8 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import path from "path";
 
+import type { LogLevel } from "../types.js";
+
 /**
  * Generic JSON-backed persistent store.
  * In-memory Map with debounced atomic writes to disk.
@@ -10,9 +12,11 @@ export class JsonStore<T> {
   private dirty = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly filePath: string;
+  private readonly logFn?: (level: LogLevel, msg: string, data?: Record<string, unknown>) => void;
 
-  constructor(filePath: string, flushInterval = 5000) {
+  constructor(filePath: string, flushInterval = 5000, logFn?: (level: LogLevel, msg: string, data?: Record<string, unknown>) => void) {
     this.filePath = filePath;
+    this.logFn = logFn;
     mkdirSync(path.dirname(filePath), { recursive: true });
     this.load();
     this.timer = setInterval(() => this.flushIfDirty(), flushInterval);
@@ -104,7 +108,12 @@ export class JsonStore<T> {
       renameSync(tmp, this.filePath);
       this.dirty = false;
     } catch (err) {
-      console.error(`[JsonStore] Failed to write ${this.filePath}:`, err);
+      const msg = `Failed to write ${this.filePath}`;
+      if (this.logFn) {
+        this.logFn("err", msg, { error: (err as Error).message, filePath: this.filePath });
+      } else {
+        console.error(`[JsonStore] ${msg}:`, err);
+      }
     }
   }
 }
