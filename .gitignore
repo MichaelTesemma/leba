@@ -58,8 +58,5 @@ temp/
 # Vite
 vite.config.ts.timestamp-*
 
-# Electron
-electron/dist/
-
 # Vercel
 .vercel

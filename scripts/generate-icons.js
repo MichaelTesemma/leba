@@ -38,7 +38,7 @@ async function generate() {
   console.log("✓ Created build/icon.icns");
 
   // ── Windows .ico ──
-  // Generate a 256px PNG — electron-builder can use this directly
+  // Generate a 256px PNG
   await sharp(svg)
     .resize(256, 256)
     .png()
@@ -51,7 +51,7 @@ async function generate() {
     fs.writeFileSync(path.join(BUILD, "icon.ico"), ico);
     console.log("✓ Created build/icon.ico");
   } catch {
-    // Fallback: just use the PNG — electron-builder accepts it
+    // Fallback: just use the PNG
     console.log("⚠ png-to-ico not available, using PNG fallback");
   }
 

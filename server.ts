@@ -7,8 +7,7 @@ import { fileURLToPath } from "url";
 // Resolve __dirname for both ESM and bundled CJS
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Load .env for bundled Electron builds.
-// Uses dynamic import to avoid tsx resolution bug with create-torrent on Node 25.
+// Load .env from the dist directory when running bundled
 (async () => {
   try {
     const { config } = await import("dotenv");

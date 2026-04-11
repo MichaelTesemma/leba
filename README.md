@@ -7,13 +7,12 @@ Stream movies and TV shows via torrents.
 - 🎬 Stream movies and TV shows via torrents
 - 📺 Built-in video player
 - 🔍 Search with TMDB integration
-- 🖥️ Cross-platform desktop app (macOS, Windows)
+- 🖥️ Web application
 
 ## Tech Stack
 
 - **Frontend:** React, Vite, TypeScript
 - **Backend:** Node.js, Express
-- **Desktop:** Electron
 - **Streaming:** WebTorrent
 
 ## Getting Started
@@ -48,9 +47,6 @@ TMDB_API_KEY=your_api_key_here
 ```bash
 # Start dev server
 npm run dev
-
-# Start with Electron
-npm run electron:dev
 ```
 
 ### Build
@@ -59,14 +55,8 @@ npm run electron:dev
 # Build for production
 npm run build
 
-# Package as desktop app
-npm run electron:build
-
-# macOS only
-npm run electron:build:mac
-
-# Windows only
-npm run electron:build:win
+# Start production server
+npm start
 ```
 
 ## Environment Variables

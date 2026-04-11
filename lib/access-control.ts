@@ -133,7 +133,6 @@ const ALLOWED_ORIGINS = [
   "http://127.0.0.1:3000",
   "http://localhost:5173",   // Vite dev server
   "http://127.0.0.1:5173",
-  "null",                     // Electron file:// protocol
 ];
 
 function isAllowedOrigin(origin: string | undefined): boolean {

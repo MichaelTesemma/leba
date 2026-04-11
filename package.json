@@ -2,7 +2,6 @@
   "name": "leba",
   "version": "1.0.0",
   "description": "Stream movies and TV shows via torrents",
-  "main": "electron/main.js",
   "author": "",
   "license": "GPL-3.0-only",
   "scripts": {
@@ -13,79 +12,12 @@
     "typecheck": "tsc --noEmit",
     "bundle": "npm run build && node -e \"require('fs').cpSync('public','dist/public',{recursive:true});\" && npx esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --external:utp-native --external:node-datachannel --external:bufferutil --external:utf-8-validate --target=node20 --banner:js=\"import{createRequire}from'module';const require=createRequire(import.meta.url);\" && node -e \"try{require('fs').copyFileSync('.env','dist/.env');console.log('Copied .env to dist/')}catch{}\"",
     "test": "node --import tsx/esm --test test/*.test.ts test/lib/*.test.ts test/routes/*.test.ts",
-    "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build && npm run bundle && electron-builder --mac",
-    "electron:build:mac": "npm run build && npm run bundle && electron-builder --mac",
-    "electron:build:win": "npm run build && npm run bundle && electron-builder --win"
-  },
-  "build": {
-    "appId": "com.leba.app",
-    "productName": "Leba",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "electron/**/*",
-      "public/**/*",
-      "lib/**/*",
-      "routes/**/*",
-      "node_modules/**/*",
-      "server.ts",
-      "package.json",
-      ".env.example"
-    ],
-    "extraResources": [
-      {
-        "from": "dist",
-        "to": "dist",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "mac": {
-      "category": "public.app-category.entertainment",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/icon.icns",
-      "darkModeSupport": true,
-      "hardenedRuntime": false
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "Leba"
-    },
-    "dmg": {
-      "sign": false
-    },
-    "electronVersion": "41.2.0"
+    "postinstall": "node scripts/fix-esm-exports.js"
   },
   "dependencies": {
     "artplayer": "^5.4.0",
     "compression": "^1.8.1",
     "dotenv": "^17.4.1",
-    "electron-is-dev": "^3.0.1",
     "express": "^5.2.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -96,7 +28,7 @@
   },
   "overrides": {
     "create-torrent": "5.0.9",
-    "bittorrent-dht": "11.0.9"
+    "bittorrent-dht": "11.0.11"
   },
   "devDependencies": {
     "@types/compression": "^1.8.1",
@@ -105,14 +37,10 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.5.2",
-    "concurrently": "^9.2.1",
-    "electron": "^41.2.0",
-    "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
     "typescript": "^6.0.2",
-    "vite": "^6.3.5",
-    "wait-on": "^9.0.5"
+    "vite": "^6.3.5"
   }
 }
