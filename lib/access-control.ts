@@ -130,6 +130,17 @@ function isRemoteSafeRoute(req: Request): boolean {
 
 export function createApiAccessControl(ctx: ServerContext): RequestHandler {
   return (req, res, next) => {
+    // Add CORS headers for all requests
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Range, X-Leba-RC-Token");
+    res.setHeader("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length, Content-Type");
+
+    // Handle preflight OPTIONS requests
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+
     if (isLocalRequest(req)) return next();
 
     if (requestPath(req) === "/api/rc/auth") return next();

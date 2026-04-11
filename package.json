@@ -1,6 +1,6 @@
 {
   "name": "leba",
-  "version": "2.7.5",
+  "version": "1.0.0",
   "description": "Stream movies and TV shows via torrents",
   "main": "electron/main.js",
   "author": "",
