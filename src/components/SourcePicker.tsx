@@ -1,0 +1,143 @@
+import { useMemo, useState, useCallback } from "react";
+import { formatBytes } from "../lib/utils";
+import "./SourcePicker.css";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Stream = any;
+
+const RES_ORDER = ["4K", "1080p", "720p", "480p"] as const;
+
+function getRes(tags: string[]): string | null {
+  for (const r of RES_ORDER) if (tags.includes(r)) return r;
+  return null;
+}
+
+interface ResGroup {
+  resolution: string;
+  streams: Stream[];
+}
+
+interface SourcePickerProps {
+  streams: Stream[] | null;
+  onPick: (stream: Stream) => void;
+  onClose: () => void;
+}
+
+export default function SourcePicker({ streams, onPick, onClose }: SourcePickerProps) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const groups = useMemo<ResGroup[]>(() => {
+    if (!streams || streams.length === 0) return [];
+
+    const byRes = new Map<string, Stream[]>();
+    for (const s of streams) {
+      const res = getRes(s.tags || []);
+      const key = res || "Other";
+      const list = byRes.get(key) || [];
+      list.push(s);
+      byRes.set(key, list);
+    }
+
+    const ordered: ResGroup[] = [];
+    for (const r of RES_ORDER) {
+      const list = byRes.get(r);
+      if (list) ordered.push({ resolution: r, streams: list.slice(0, 3) });
+    }
+    const other = byRes.get("Other");
+    if (other) ordered.push({ resolution: "Other", streams: other.slice(0, 3) });
+
+    return ordered;
+  }, [streams]);
+
+  const handleCopy = useCallback((e: React.MouseEvent, s: Stream) => {
+    e.stopPropagation();
+    const magnet = `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(s.name)}`;
+    // navigator.clipboard requires HTTPS — use execCommand fallback for Qt WebEngine
+    const ta = document.createElement("textarea");
+    ta.value = magnet;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try { document.execCommand("copy"); } catch {}
+    document.body.removeChild(ta);
+    const id = `${s.infoHash}:${s.fileIdx ?? ""}`;
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 1500);
+  }, []);
+
+  return (
+    <div className="picker-overlay" onClick={onClose}>
+      <div className="picker-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="picker-header">
+          <h3>Select Source</h3>
+          {streams && <span className="picker-count">{streams.length} sources</span>}
+          <button className="picker-close" onClick={onClose}>&#10005;</button>
+        </div>
+
+        <div className="picker-list">
+          {streams === null ? (
+            <div className="picker-loading">Searching providers...</div>
+          ) : groups.length === 0 ? (
+            <div className="picker-empty">No streams found</div>
+          ) : (
+            groups.map((group) => (
+              <div key={group.resolution} className="picker-group">
+                <div className="picker-group-label">{group.resolution}</div>
+                {group.streams.map((s: Stream) => {
+                  const rowId = `${s.infoHash}:${s.fileIdx ?? ""}`;
+                  const copied = copiedId === rowId;
+                  return (
+                    <div
+                      key={rowId}
+                      className="picker-item"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onPick(s)}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return;
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(s); }
+                      }}
+                    >
+                      <div className="picker-item-row">
+                        <div className="picker-item-main">
+                          <span className="picker-item-name">{s.name}</span>
+                          <div className="picker-item-tags">
+                            {s.cached && <span className="picker-tag cached">Cached</span>}
+                            {s.seasonPack && <span className="picker-tag season-pack">Season Pack</span>}
+                            {s.tags.filter((t: string) => t !== "Native").map((t: string) => (
+                              <span key={t} className="picker-tag">{t}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="picker-item-meta">
+                          <span className="picker-source">{s.source.toUpperCase()}</span>
+                          <span className="picker-seeds">
+                            <span className="picker-seed-dot" />
+                            {s.seeders}
+                          </span>
+                          <span className="picker-size">{formatBytes(s.size)}</span>
+                          <button
+                            className={`picker-copy-magnet${copied ? " copied" : ""}`}
+                            onClick={(e) => handleCopy(e, s)}
+                            title="Copy magnet link"
+                          >
+                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                              <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                            {copied && <span className="picker-copy-tooltip">Copied to clipboard</span>}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

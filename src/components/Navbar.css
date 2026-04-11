@@ -1,0 +1,299 @@
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 48px;
+  background: transparent;
+  transition: background var(--transition-slow), border-color var(--transition-slow);
+  border-bottom: 1px solid transparent;
+}
+
+.navbar.scrolled {
+  background: rgba(5, 5, 7, 0.92);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom-color: var(--border);
+}
+
+/* ── High-contrast mode when navbar is transparent ── */
+.navbar:not(.scrolled) .navbar-brand {
+  color: #fff;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.navbar:not(.scrolled) .navbar-brand svg {
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.7));
+}
+
+.navbar:not(.scrolled) .navbar-search {
+  background: rgba(0, 0, 0, 0.45);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.navbar:not(.scrolled) .navbar-search svg {
+  fill: rgba(255, 255, 255, 0.6);
+}
+
+.navbar:not(.scrolled) .navbar-search input {
+  color: #fff;
+}
+
+.navbar:not(.scrolled) .navbar-search input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.navbar:not(.scrolled) .navbar-pair-btn {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.navbar:not(.scrolled) .navbar-pair-btn svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.navbar:not(.scrolled) .navbar-vpn-pill {
+  color: rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.15);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.navbar:not(.scrolled) .navbar-vpn-pill.active {
+  color: var(--green);
+  border-color: rgba(74, 222, 128, 0.4);
+}
+
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: var(--accent-bright);
+  transition: color var(--transition-slow), text-shadow var(--transition-slow);
+}
+
+.navbar-brand:hover {
+  color: var(--accent);
+}
+
+.navbar-brand svg {
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+  transition: filter var(--transition-slow);
+}
+
+.navbar-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  padding: 9px 18px;
+  width: 340px;
+  transition: border-color var(--transition-slow), background var(--transition-slow), box-shadow var(--transition-slow);
+}
+
+.navbar-search:focus-within {
+  border-color: var(--accent);
+  background: rgba(201, 168, 76, 0.03);
+  box-shadow: 0 0 20px rgba(201, 168, 76, 0.06);
+}
+
+.navbar-search svg {
+  transition: fill var(--transition-slow);
+}
+
+.navbar-search input {
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  width: 100%;
+  font-family: var(--font-body);
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  transition: color var(--transition-slow);
+}
+
+.navbar-search input::placeholder {
+  color: var(--text-muted);
+  transition: color var(--transition-slow);
+}
+
+.navbar-vpn-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  transition: all var(--transition-slow);
+  cursor: pointer;
+}
+
+.navbar-vpn-pill:hover {
+  border-color: var(--text-secondary);
+  color: var(--text-secondary);
+}
+
+.navbar-vpn-pill.active {
+  border-color: rgba(74, 222, 128, 0.4);
+  color: var(--green);
+  background: rgba(74, 222, 128, 0.06);
+}
+
+.navbar-vpn-pill.active:hover {
+  background: rgba(74, 222, 128, 0.12);
+}
+
+.navbar-vpn-pill.toggling {
+  border-color: rgba(250, 204, 21, 0.4);
+  color: var(--accent);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.navbar-pair-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  transition: border-color var(--transition-slow), color var(--transition-slow), background var(--transition-slow), text-shadow var(--transition-slow);
+}
+
+.navbar-pair-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+  background: var(--accent-subtle);
+}
+
+.navbar-list-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: border-color var(--transition-slow), color var(--transition-slow), background var(--transition-slow), text-shadow var(--transition-slow);
+}
+
+.navbar-list-btn:hover,
+.navbar-list-btn.active {
+  border-color: var(--accent);
+  color: var(--accent-bright);
+  background: var(--accent-subtle);
+}
+
+.navbar:not(.scrolled) .navbar-list-btn {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.15);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.navbar:not(.scrolled) .navbar-list-btn svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
+.navbar-pair-connected {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.navbar-pair-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+/* ── Remote mode: always compact, mobile-optimized ── */
+.navbar.navbar-remote {
+  padding: 12px 16px;
+  background: rgba(5, 5, 7, 0.92);
+  backdrop-filter: blur(20px) saturate(1.2);
+  border-bottom-color: var(--border);
+}
+
+.navbar.navbar-remote .navbar-search {
+  width: 0;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 14px;
+}
+
+.navbar.navbar-remote .navbar-brand span {
+  display: none;
+}
+
+/* ── Update indicator dot on Settings button ── */
+.navbar-update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-bright);
+  box-shadow: 0 0 8px rgba(201, 168, 76, 0.5);
+  animation: updatePulse 2.5s ease-in-out infinite;
+}
+
+@keyframes updatePulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(201, 168, 76, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(201, 168, 76, 0.6); }
+}
+
+@media (max-width: 768px) {
+  .navbar {
+    padding: 14px 16px;
+  }
+  .navbar-search {
+    width: 180px;
+    padding: 8px 14px;
+  }
+  .navbar-pair-btn span {
+    display: none;
+  }
+  .navbar-list-btn span {
+    display: none;
+  }
+}
