@@ -133,17 +133,417 @@ async function searchYTS(query: string): Promise<SearchResult[]> {
   }
 }
 
+// ── 1337x ───────────────────────────────────────────────────────
+async function search1337x(query: string): Promise<SearchResult[]> {
+  try {
+    // 1337x has a search page — scrape torrent names and magnet links
+    const url = `https://1337x.to/search/${encodeURIComponent(query)}/1/`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // Extract torrent rows
+    const rowMatches = html.match(/<td class="coll-1 name".*?<\/td>.*?<\/tr>/gs) || [];
+    for (const row of rowMatches.slice(0, 30)) {
+      // Name
+      const nameMatch = row.match(/>([^<]+)<\/a>\s*<\/td>/);
+      if (!nameMatch) continue;
+      const name = nameMatch[1].replace(/<[^>]+>/g, "").trim();
+      if (name.length < 3) continue;
+
+      // Magnet/hash from link
+      const linkMatch = row.match(/href="\/torrent\/(\d+)\//);
+      if (!linkMatch) continue;
+
+      // Seeders
+      const seedMatch = row.match(/<td class="[\s\w]*seeds">(\d+)<\/td>/);
+      const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
+
+      // Leechers
+      const leechMatch = row.match(/<td class="[\s\w]*leeches">(\d+)<\/td>/);
+      const leechers = leechMatch ? parseInt(leechMatch[1], 10) : 0;
+
+      // Size
+      const sizeMatch = row.match(/([\d.]+\s*(?:TB|GB|MB))/i);
+      const size = sizeMatch ? parseSize(sizeMatch[1]) : 0;
+
+      // We can't get the hash from search page — need to visit torrent page
+      // For now, use the URL as a unique ID and let downstream dedup handle it
+      results.push({
+        name,
+        infoHash: `1337x:${linkMatch[1]}`, // Temporary — real hash fetched below
+        size,
+        seeders,
+        leechers,
+        source: "1337x",
+      });
+    }
+
+    // Fetch real hashes for top results (batch)
+    await Promise.all(results.slice(0, 15).map(async (r) => {
+      try {
+        const id = r.infoHash.split(":")[1];
+        const detailUrl = `https://1337x.to/torrent/${id}/x/`;
+        const detailResp = await fetch(detailUrl, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!detailResp.ok) return;
+        const detailHtml = await detailResp.text();
+        const hashMatch = detailHtml.match(/([a-f0-9]{40})/);
+        if (hashMatch) r.infoHash = hashMatch[1].toLowerCase();
+      } catch { /* skip */ }
+    }));
+
+    return results.filter((r) => r.infoHash.length === 40);
+  } catch {
+    return [];
+  }
+}
+
+// ── TorrentGalaxy ───────────────────────────────────────────────
+async function searchTorrentGalaxy(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://torrentgalaxy.to/torrents.php?search=${encodeURIComponent(query)}&nox=2`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // TorrentGalaxy embeds JSON in the page
+    const jsonMatch = html.match(/var results\s*=\s*(\[.*?\]);/s);
+    if (jsonMatch) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const data: any[] = JSON.parse(jsonMatch[1]);
+        for (const item of data.slice(0, 30)) {
+          const hash = (item.hash || "").toLowerCase();
+          if (!hash || hash.length !== 40) continue;
+          results.push({
+            name: item.name || item.title || "",
+            infoHash: hash,
+            size: parseSize(item.size || ""),
+            seeders: parseInt(item.seeders, 10) || 0,
+            leechers: parseInt(item.leechers, 10) || 0,
+            source: "tgx",
+          });
+        }
+      } catch { /* fallback to HTML parsing */ }
+    }
+
+    // Fallback: parse HTML table
+    if (results.length === 0) {
+      const rowRegex = /<a href="\/torrent\/(\d+)\//g;
+      let match;
+      while ((match = rowRegex.exec(html)) !== null && results.length < 30) {
+        const id = match[1];
+        // Get surrounding context
+        const start = Math.max(0, match.index - 200);
+        const end = Math.min(html.length, match.index + 500);
+        const chunk = html.slice(start, end);
+
+        const nameMatch = chunk.match(/title="([^"]{10,})"/);
+        const seedMatch = chunk.match(/title="Seeders[^"]*">\s*([\d,]+)/);
+        const sizeMatch = chunk.match(/([\d.]+\s*(?:TB|GB|MB))/i);
+        const hashMatch = chunk.match(/([a-f0-9]{40})/i);
+
+        if (nameMatch) {
+          results.push({
+            name: nameMatch[1].trim(),
+            infoHash: hashMatch?.[1]?.toLowerCase() || `tgx:${id}`,
+            size: sizeMatch ? parseSize(sizeMatch[1]) : 0,
+            seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
+            leechers: 0,
+            source: "tgx",
+          });
+        }
+      }
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── BTDigg (DHT search engine) ─────────────────────────────────
+async function searchBTDigg(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://btdig.com/search?q=${encodeURIComponent(query)}&p=0&order=0`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // BTDigg has a very regular structure
+    const divRegex = /<div class="one_result">(.*?)<\/div>\s*<div class="clear"><\/div>/gs;
+    let divMatch;
+    while ((divMatch = divRegex.exec(html)) !== null && results.length < 20) {
+      const block = divMatch[1];
+
+      const nameMatch = block.match(/<a[^>]+class="torrent_name"[^>]*>(.*?)<\/a>/);
+      if (!nameMatch) continue;
+      const name = nameMatch[1].replace(/<[^>]+>/g, "").trim();
+
+      const hashMatch = block.match(/urn:btih:([a-f0-9]{40})/i);
+      const infoHash = hashMatch ? hashMatch[1].toLowerCase() : "";
+
+      const sizeMatch = block.match(/Torrent size: ([\d.]+)\s*(TB|GB|MB|KB)/i);
+      const size = sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0;
+
+      results.push({
+        name,
+        infoHash,
+        size,
+        seeders: 0, // BTDigg doesn't expose seeders
+        leechers: 0,
+        source: "btdigg",
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── Bitsearch ──────────────────────────────────────────────────
+async function searchBitsearch(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://bitsearch.to/search?q=${encodeURIComponent(query)}`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // Bitsearch renders results in a structured list
+    const itemRegex = /<a href="\/torrent\/([^"]+)"[^>]*>(.*?)<\/a>/gs;
+    let itemMatch;
+    while ((itemMatch = itemRegex.exec(html)) !== null && results.length < 20) {
+      const id = itemMatch[1];
+      const htmlContent = itemMatch[2];
+      const nameMatch = htmlContent.match(/title="([^"]{5,})"/);
+      if (!nameMatch) continue;
+
+      // Get size from nearby context
+      const start = Math.max(0, itemMatch.index - 100);
+      const context = html.slice(start, itemMatch.index + 300);
+      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB)/i);
+      const seedMatch = context.match(/seeders[^>]*>\s*([\d,]+)/i);
+
+      results.push({
+        name: nameMatch[1].trim(),
+        infoHash: id.length === 40 ? id.toLowerCase() : `bitsearch:${id}`,
+        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
+        seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
+        leechers: 0,
+        source: "bitsearch",
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── BT4G ──────────────────────────────────────────────────────
+async function searchBT4G(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://bt4g.org/search/${encodeURIComponent(query)}/1`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // BT4G has clean result cards
+    const detailRegex = /<a href="\/torrent\/([a-f0-9]{40})"[^>]*title="([^"]{5,})"/gi;
+    let match;
+    while ((match = detailRegex.exec(html)) !== null && results.length < 20) {
+      const infoHash = match[1].toLowerCase();
+      const name = match[2].trim();
+
+      // Size from nearby text
+      const start = Math.max(0, match.index - 50);
+      const context = html.slice(start, match.index + 400);
+      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB|KB)/i);
+
+      results.push({
+        name,
+        infoHash,
+        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
+        seeders: 0,
+        leechers: 0,
+        source: "bt4g",
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── LimeTorrents ──────────────────────────────────────────────
+async function searchLimeTorrents(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://www.limetorrents.lol/search/all/${encodeURIComponent(query)}`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // LimeTorrents has a regular table structure
+    const rowRegex = /<tr>.*?<td class="tdleft".*?<a[^>]+href="([^"]+)"[^>]*title="([^"]{5,})"[^>]*>.*?<\/tr>/gs;
+    let rowMatch;
+    while ((rowMatch = rowRegex.exec(html)) !== null && results.length < 20) {
+      const link = rowMatch[1];
+      const name = rowMatch[2].trim();
+
+      // Extract hash from URL
+      const hashMatch = link.match(/\/([a-f0-9]{40})\.html/i);
+      const infoHash = hashMatch ? hashMatch[1].toLowerCase() : "";
+      if (!infoHash) continue;
+
+      // Size from nearby context
+      const context = rowMatch[0];
+      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB|KB)/i);
+      const seedMatch = context.match(/seeders[^>]*>\s*([\d,]+)/i);
+
+      results.push({
+        name,
+        infoHash,
+        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
+        seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
+        leechers: 0,
+        source: "lime",
+      });
+    }
+
+    return results;
+  } catch {
+    return [];
+  }
+}
+
+// ── Nyaa (Anime only) ─────────────────────────────────────────
+async function searchNyaa(query: string): Promise<SearchResult[]> {
+  try {
+    const url = `https://nyaa.si/?f=0&c=0_0&q=${encodeURIComponent(query)}&p=0&s=seeders&o=desc`;
+    const resp = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!resp.ok) return [];
+    const html = await resp.text();
+
+    const results: SearchResult[] = [];
+
+    // Nyaa has a clean table
+    const rowRegex = /<tr[^>]*>\s*<td[^>]*>(\d+)<\/td>.*?<a href="\/view\/(\d+)"[^>]*title="([^"]{5,})"[^>]*>.*?<\/tr>/gs;
+    let rowMatch;
+    while ((rowMatch = rowRegex.exec(html)) !== null && results.length < 20) {
+      const seeders = parseInt(rowMatch[1], 10) || 0;
+      const name = rowMatch[3].trim();
+
+      // Get size from nearby context
+      const context = rowMatch[0];
+      const sizeMatch = context.match(/([\d.]+)\s*(TiB|GiB|MiB|KiB)/i);
+
+      results.push({
+        name,
+        infoHash: `nyaa:${rowMatch[2]}`,
+        size: sizeMatch ? parseSize(sizeMatch[1] + sizeMatch[2].toLowerCase().replace("i", "")) : 0,
+        seeders,
+        leechers: 0,
+        source: "nyaa",
+      });
+    }
+
+    // Fetch real hashes for nyaa entries (batch)
+    await Promise.all(results.slice(0, 15).map(async (r) => {
+      try {
+        const id = r.infoHash.split(":")[1];
+        const detailUrl = `https://nyaa.si/view/${id}`;
+        const detailResp = await fetch(detailUrl, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!detailResp.ok) return;
+        const detailHtml = await detailResp.text();
+        const hashMatch = detailHtml.match(/([a-f0-9]{40})/);
+        if (hashMatch) r.infoHash = hashMatch[1].toLowerCase();
+      } catch { /* skip */ }
+    }));
+
+    return results.filter((r) => r.infoHash.length === 40 || r.infoHash.startsWith("nyaa:"));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Parse a human-readable size string like "1.5 GB" into bytes.
+ */
+function parseSize(str: string): number {
+  const match = str.trim().match(/^([\d.]+)\s*(TB|GB|MB|KB)$/i);
+  if (!match) return 0;
+  const num = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+  const multipliers: Record<string, number> = { TB: 1099511627776, GB: 1073741824, MB: 1048576, KB: 1024 };
+  return Math.round(num * (multipliers[unit] || 1));
+}
+
 async function searchTorrents(query: string, imdbId?: string): Promise<SearchResult[]> {
-  const [tpb, eztv, yts] = await Promise.allSettled([
+  const [tpb, eztv, yts, x1337, tgx, btdigg, bitsearch, bt4g, lime, nyaa] = await Promise.allSettled([
     searchTPB(query),
     searchEZTV(query, imdbId),
     searchYTS(query),
+    search1337x(query),
+    searchTorrentGalaxy(query),
+    searchBTDigg(query),
+    searchBitsearch(query),
+    searchBT4G(query),
+    searchLimeTorrents(query),
+    searchNyaa(query),
   ]);
 
   const all: SearchResult[] = [
     ...(tpb.status === "fulfilled" ? tpb.value : []),
     ...(eztv.status === "fulfilled" ? eztv.value : []),
     ...(yts.status === "fulfilled" ? yts.value : []),
+    ...(x1337.status === "fulfilled" ? x1337.value : []),
+    ...(tgx.status === "fulfilled" ? tgx.value : []),
+    ...(btdigg.status === "fulfilled" ? btdigg.value : []),
+    ...(bitsearch.status === "fulfilled" ? bitsearch.value : []),
+    ...(bt4g.status === "fulfilled" ? bt4g.value : []),
+    ...(lime.status === "fulfilled" ? lime.value : []),
+    ...(nyaa.status === "fulfilled" ? nyaa.value : []),
   ];
 
   // Dedupe by infoHash, keep the one with more seeders
@@ -162,6 +562,13 @@ async function searchTorrents(query: string, imdbId?: string): Promise<SearchRes
     tpb: tpb.status === "fulfilled" ? tpb.value.length : 0,
     eztv: eztv.status === "fulfilled" ? eztv.value.length : 0,
     yts: yts.status === "fulfilled" ? yts.value.length : 0,
+    "1337x": x1337.status === "fulfilled" ? x1337.value.length : 0,
+    tgx: tgx.status === "fulfilled" ? tgx.value.length : 0,
+    btdigg: btdigg.status === "fulfilled" ? btdigg.value.length : 0,
+    bitsearch: bitsearch.status === "fulfilled" ? bitsearch.value.length : 0,
+    bt4g: bt4g.status === "fulfilled" ? bt4g.value.length : 0,
+    lime: lime.status === "fulfilled" ? lime.value.length : 0,
+    nyaa: nyaa.status === "fulfilled" ? nyaa.value.length : 0,
     merged: merged.length,
   });
 
