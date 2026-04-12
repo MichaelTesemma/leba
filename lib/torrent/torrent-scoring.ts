@@ -50,14 +50,34 @@ export function scoreTorrent(result: TorrentResult, title: string, year: number 
   score += seederScore;
 
   // Size efficiency: smaller files download faster → play sooner.
-  // ≤ 3GB = full bonus (sweet spot for 1080p streaming).
-  // > 3GB = progressive penalty (larger files buffer slower).
+  // For movies/single episodes: ≤ 3GB = bonus, > 3GB = penalty.
+  // For TV season packs: ≤ 500MB/episode = bonus, above = penalty.
   if (result.size && result.size > 0) {
-    const gb = result.size / (1024 ** 3);
-    if (gb <= 3) {
-      score += Math.round(Math.min(15, 4 / gb)); // 0.3GB→+13, 0.5GB→+8, 1GB→+4, 2GB→+2, 3GB→+1
+    const bytes = result.size;
+    const gb = bytes / (1024 ** 3);
+
+    // Detect season packs for TV (no specific episode marker, or "season X" text)
+    const isSeasonPack = type === "tv" && (
+      /\b(complete\.?season|full\.?season|season\s*\d)\b/i.test(name) ||
+      /S\d{1,2}-S\d{1,2}|\bS\d{2}-\d{2}\b/i.test(name) ||
+      // No specific episode markers at all
+      !/S\d{1,2}E\d{1,2}/i.test(name)
+    );
+
+    let sizeLimitGB = 3; // default: 3GB for movies/single episodes
+    if (isSeasonPack) {
+      // Estimate episode count from season number or name
+      const seasonMatch = name.match(/S(\d{1,2})/);
+      const season = seasonMatch ? parseInt(seasonMatch[1], 10) : 1;
+      // Typical episode counts: modern = 8-10, classic = 20-26, anime = 12-26
+      const estimatedEpisodes = Math.max(8, Math.min(26, season * 2 + 8));
+      sizeLimitGB = (0.5 * estimatedEpisodes); // 500MB per episode
+    }
+
+    if (gb <= sizeLimitGB) {
+      score += Math.round(Math.min(15, 4 / Math.max(gb, 0.1))); // scales down as size grows
     } else {
-      const penalty = Math.round(Math.min(15, (gb - 3) * 2.5)); // 3.1GB→0, 4GB→-3, 5GB→-5, 8GB→-13, 10GB→-15
+      const penalty = Math.round(Math.min(15, (gb - sizeLimitGB) * 2.5));
       score -= penalty;
     }
   }
