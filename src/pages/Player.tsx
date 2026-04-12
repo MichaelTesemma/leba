@@ -318,11 +318,11 @@ export default function Player() {
             },
             click: () => {
               if (activeSub) {
-                switchSubtitle("off");
+                setActiveSub("");
                 const art = artRef.current;
                 if (art) art.subtitle.show = false;
               } else if (subs.length > 0 && subs[0]) {
-                switchSubtitle(subs[0].value);
+                setActiveSub(subs[0].value);
               }
             },
           },
@@ -426,6 +426,22 @@ export default function Player() {
       }
     };
   }, [infoHash, fileIndex]);
+
+  // ── Load/reload subtitle when activeSub changes ──
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art || !activeSub) return;
+    const sub = subs.find((s) => s.value === activeSub);
+    if (!sub) return;
+    const p = window.location.port || "3000";
+    if (sub.value.startsWith("file:")) {
+      const subUrl = `http://127.0.0.1:${p}/api/subtitle/${infoHash}/${sub.fileIndex}`;
+      art.subtitle.load(subUrl, { name: sub.label, escape: false });
+    } else if (sub.value.startsWith("custom:")) {
+      const subUrl = `http://127.0.0.1:${p}${sub.value.replace("custom:", "")}`;
+      art.subtitle.load(subUrl, { name: sub.label, escape: false });
+    }
+  }, [activeSub]);
 
   // ── Watch history progress reporting ──
   reportProgressRef.current = () => {
