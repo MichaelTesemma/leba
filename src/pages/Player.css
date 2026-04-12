@@ -399,6 +399,10 @@
   border-color: var(--accent);
 }
 
+.player-sub-btn {
+  bottom: 128px;
+}
+
 .player-quality-btn-label {
   color: var(--accent);
   font-size: 0.7rem;
