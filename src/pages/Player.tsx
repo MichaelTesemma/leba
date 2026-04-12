@@ -500,6 +500,63 @@ export default function Player() {
     }
   }, [activeSub]);
 
+  // ── Buffering diagnostics ──
+  const [showBufferDiag, setShowBufferDiag] = useState(false);
+  const [bufferDiag, setBufferDiag] = useState("");
+  const bufferCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art) return;
+
+    let stalledAt = 0;
+    let diagShown = false;
+
+    const checkBuffer = setInterval(() => {
+      const video = art.video;
+      if (!video || video.readyState < 3) return; // Not enough data to judge
+
+      const isBuffering = video.readyState < 4 && !video.paused && video.currentTime > 1;
+      if (!isBuffering) {
+        stalledAt = 0;
+        if (diagShown) {
+          diagShown = false;
+          setShowBufferDiag(false);
+        }
+        return;
+      }
+
+      if (stalledAt === 0) stalledAt = Date.now();
+      const stalledMs = Date.now() - stalledAt;
+
+      if (stalledMs > 5000 && !diagShown) {
+        diagShown = true;
+        // Check common breaking points
+        const hasPeers = numPeers > 0;
+        const hasSpeed = dlSpeed > 10000; // >10KB/s
+        const hasProgress = dlProgress > 0;
+
+        if (!hasPeers) {
+          setBufferDiag("No peers connected — the torrent may have no seeders.");
+        } else if (!hasSpeed) {
+          setBufferDiag(`${numPeers} peer${numPeers > 1 ? "s" : ""} connected but transfer is stalled.`);
+        } else if (!hasProgress) {
+          setBufferDiag("Peers found but not receiving data — possible NAT/firewall issue.");
+        } else if (dlProgress < 0.5) {
+          setBufferDiag(`Downloading... ${Math.round(dlProgress * 100)}% buffered. Waiting for more data.`);
+        } else {
+          setBufferDiag("Connection to server interrupted — check your internet connection.");
+        }
+        setShowBufferDiag(true);
+      }
+    }, 2000);
+
+    return () => {
+      clearInterval(checkBuffer);
+      setShowBufferDiag(false);
+    };
+  }, [numPeers, dlSpeed, dlProgress]);
+
   // ── Watch history progress reporting ──
   reportProgressRef.current = () => {
     const time = effectiveTimeRef.current;
@@ -732,6 +789,19 @@ export default function Player() {
             <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
           </svg>
         </button>
+      )}
+
+      {showBufferDiag && (
+        <div className="player-buffering-overlay">
+          <div className="player-buffering-spinner" />
+          <div className="player-buffering-text">Buffering…</div>
+          <div className="player-buffering-detail">{bufferDiag}</div>
+          <div className="player-buffering-meta">
+            <span>{numPeers} peer{numPeers > 1 ? "s" : ""}</span>
+            {dlSpeed > 0 && <span>· {formatBytes(dlSpeed)}/s</span>}
+            {dlProgress > 0 && <span>· {Math.round(dlProgress * 100)}%</span>}
+          </div>
+        </div>
       )}
 
       {showEpisodes && isTV && (
