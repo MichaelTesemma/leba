@@ -248,9 +248,12 @@ export default function Player() {
 
     const port = window.location.port || "3000";
     const debridStreamKey = state?.debridStreamKey;
+    // Cache-bust with timestamp so the browser never sends a 304 conditional request
+    // for a stale URL from a previous session
+    const ts = Date.now();
     const streamUrl = debridStreamKey
-      ? `http://127.0.0.1:${port}/api/debrid-stream?streamKey=${encodeURIComponent(debridStreamKey)}`
-      : `http://127.0.0.1:${port}/api/stream/${infoHash}/${fileIndex}`;
+      ? `http://127.0.0.1:${port}/api/debrid-stream?streamKey=${encodeURIComponent(debridStreamKey)}&_t=${ts}`
+      : `http://127.0.0.1:${port}/api/stream/${infoHash}/${fileIndex}?_t=${ts}`;
 
     // Destroy previous instance
     if (artRef.current) {
