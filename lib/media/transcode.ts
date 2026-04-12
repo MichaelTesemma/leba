@@ -150,6 +150,7 @@ export function serveFile(filePath: string, fileSize: number, contentType: strin
       "Content-Length": parsed.end - parsed.start + 1,
       "Content-Type": contentType,
       "X-Accel-Buffering": "no",
+      "Connection": "close",
     });
     const s = createReadStream(filePath, { start: parsed.start, end: parsed.end });
     s.on("error", () => s.destroy());
@@ -161,6 +162,7 @@ export function serveFile(filePath: string, fileSize: number, contentType: strin
       "Content-Type": contentType,
       "Accept-Ranges": "bytes",
       "X-Accel-Buffering": "no",
+      "Connection": "close",
     });
     const s = createReadStream(filePath);
     s.on("error", () => s.destroy());
@@ -213,6 +215,7 @@ export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: R
       "Content-Length": parsed.end - parsed.start + 1,
       "Content-Type": "video/mp4",
       "X-Accel-Buffering": "no",
+      "Connection": "close",
     });
     const s = file.createReadStream({ start: parsed.start, end: parsed.end });
     s.on("error", () => { s.destroy(); onEnd(); });
@@ -224,6 +227,7 @@ export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: R
       "Content-Type": "video/mp4",
       "Accept-Ranges": "bytes",
       "X-Accel-Buffering": "no",
+      "Connection": "close",
     });
     const s = file.createReadStream();
     s.on("error", () => { s.destroy(); onEnd(); });
@@ -285,6 +289,7 @@ export function serveLiveTranscode(opts: LiveTranscodeOpts, req: Request, res: R
     "Content-Type": "video/mp4",
     "Transfer-Encoding": "chunked",
     "X-Accel-Buffering": "no",
+    "Connection": "close",
   });
 
   ffmpeg.stdout!.pipe(res);

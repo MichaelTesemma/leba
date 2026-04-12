@@ -238,6 +238,9 @@ export default function streamRoutes(app: Express, ctx: ServerContext): void {
 
       res.status(status);
 
+      // Force fresh connection — prevents stale keep-alive after sleep/wake
+      res.setHeader("Connection", "close");
+
       // Forward relevant headers
       const fwd = ["content-type", "content-length", "content-range", "accept-ranges"];
       for (const h of fwd) {
