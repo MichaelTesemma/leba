@@ -41,10 +41,16 @@ export default function SourcePicker({ streams, onPick, onClose }: SourcePickerP
     const ordered: ResGroup[] = [];
     for (const r of RES_ORDER) {
       const list = byRes.get(r);
-      if (list) ordered.push({ resolution: r, streams: list.slice(0, 10) });
+      if (list) {
+        list.sort((a, b) => (b.score || 0) - (a.score || 0));
+        ordered.push({ resolution: r, streams: list.slice(0, 10) });
+      }
     }
     const other = byRes.get("Other");
-    if (other) ordered.push({ resolution: "Other", streams: other.slice(0, 10) });
+    if (other) {
+      other.sort((a, b) => (b.score || 0) - (a.score || 0));
+      ordered.push({ resolution: "Other", streams: other.slice(0, 10) });
+    }
 
     return ordered;
   }, [streams]);
