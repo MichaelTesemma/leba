@@ -70,6 +70,35 @@ export default function Player() {
     return groups;
   }, [sources]);
 
+  // Episode list state (for TV shows / season packs)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [episodes, setEpisodes] = useState<any[]>([]);
+  const [showEpisodes, setShowEpisodes] = useState(false);
+  const [loadingEpisodes, setLoadingEpisodes] = useState(false);
+
+  const isTV = state?.type === "tv" || tags.some((t) => /S\d{1,2}E\d{1,2}|season/i.test(t));
+
+  useEffect(() => {
+    if (!isTV || !infoHash || episodes.length > 0) return;
+    let cancelled = false;
+    setLoadingEpisodes(true);
+    import("../lib/api").then(({ fetchStatus }) => {
+      fetchStatus(infoHash).then((data) => {
+        if (cancelled || !data?.files) return;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vids = data.files.filter((f: any) => f.isVideo).sort((a: any, b: any) => {
+          // Sort by episode number extracted from filename
+          const epA = a.name.match(/[Ss]\d{1,2}[Ee](\d{1,3})/i);
+          const epB = b.name.match(/[Ss]\d{1,2}[Ee](\d{1,3})/i);
+          if (epA && epB) return parseInt(epA[1], 10) - parseInt(epB[1], 10);
+          return a.index - b.index;
+        });
+        if (!cancelled) setEpisodes(vids);
+      }).catch(() => {}).finally(() => { if (!cancelled) setLoadingEpisodes(false); });
+    });
+    return () => { cancelled = true; };
+  }, [infoHash, isTV]);
+
   const currentQuality = useMemo(() => {
     const tag = tags?.find((t: string) => ["1080p", "720p", "480p"].includes(t));
     return tag || "Auto";
@@ -142,6 +171,25 @@ export default function Player() {
       setSwitchingSource(null);
     }
   }, [active, startStream, navigate, state, sources, mediaTitle]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleSwitchEpisode = useCallback(async (ep: any) => {
+    if (String(ep.index) === String(fileIndex)) { setShowEpisodes(false); return; }
+    setSwitchingSource(ep.name);
+    try {
+      const result = await playTorrent(infoHash!, "", state?.season, state?.episode, ep.index);
+      const newTags = result.tags || tags || [];
+      setCurrentTags(newTags);
+      setShowEpisodes(false);
+      const currentPos = effectiveTimeRef.current?.time ?? 0;
+      navigate("/", { replace: true });
+      startStream(result.infoHash, result.fileIndex, mediaTitle, newTags, result.debridStreamKey);
+      navigate(`/play/${result.infoHash}/${result.fileIndex}`, {
+        state: { ...state, tags: newTags, sources, debridStreamKey: result.debridStreamKey, resumePosition: currentPos > 10 ? currentPos : undefined },
+      });
+    } catch { /* stay on current */ }
+    finally { setSwitchingSource(null); }
+  }, [infoHash, fileIndex, startStream, navigate, state, sources, mediaTitle, tags]);
 
   const artSeekRef = useRef<(seconds: number) => void>(() => {});
 
@@ -290,6 +338,15 @@ export default function Player() {
         airplay: true,
         lang: navigator.language.toLowerCase().startsWith("zh") ? "zh-cn" : "en",
         controls: [
+          ...(isTV ? [{
+            name: "episodes",
+            index: 5,
+            position: "right",
+            html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z"/></svg>',
+            tooltip: "Episodes",
+            style: { color: "#38bdf8", display: "flex", alignItems: "center" },
+            click: () => setShowEpisodes(!showEpisodes),
+          }] : []),
           {
             name: "quality",
             index: 10,
@@ -675,6 +732,50 @@ export default function Player() {
             <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
           </svg>
         </button>
+      )}
+
+      {showEpisodes && isTV && (
+        <div className="player-sources-overlay" onClick={() => setShowEpisodes(false)}>
+          <div className="player-sources-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="player-sources-header">
+              <h3>Episodes</h3>
+              <button className="player-sources-close" onClick={() => setShowEpisodes(false)}>&#10005;</button>
+            </div>
+            <div className="player-sources-list">
+              {loadingEpisodes ? (
+                <div className="picker-loading">Loading episodes...</div>
+              ) : episodes.length === 0 ? (
+                <div className="picker-empty">No episodes found</div>
+              ) : (
+                episodes.map((ep: any) => {
+                  const isCurrent = String(ep.index) === String(fileIndex);
+                  const isSwitching = switchingSource === ep.name;
+                  // Extract episode number for display
+                  const epMatch = ep.name.match(/[Ss](\d{1,2})[Ee](\d{1,3})/i);
+                  const epLabel = epMatch ? `S${epMatch[1]}E${epMatch[2]}` : `Ep ${ep.index + 1}`;
+                  // Get display name after the episode tag
+                  const cleanName = ep.name.replace(/.*[Ss]\d{1,2}[Ee]\d{1,3}[\s._-]*/i, "") || ep.name;
+                  return (
+                    <button
+                      key={ep.index}
+                      className={`player-source-item${isCurrent ? " active" : ""}`}
+                      onClick={() => handleSwitchEpisode(ep)}
+                      disabled={isSwitching}
+                    >
+                      <div className="player-source-item-main">
+                        <span className="player-source-item-name">{epLabel} — {cleanName}</span>
+                      </div>
+                      <div className="player-source-item-meta">
+                        <span className="player-source-size">{formatBytes(ep.length)}</span>
+                        {isSwitching && <span className="player-source-switching">Switching...</span>}
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {showSources && sources.length > 1 && (
