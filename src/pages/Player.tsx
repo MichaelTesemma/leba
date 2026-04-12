@@ -351,11 +351,11 @@ export default function Player() {
             name: "quality",
             index: 10,
             position: "right",
-            html: "1080p",
+            html: "Torrent",
             tooltip: "Switch quality",
             style: {
               color: "#38bdf8",
-              fontSize: "12px",
+              fontSize: "10px",
               fontWeight: "700",
               letterSpacing: "0.5px",
               textTransform: "uppercase",
