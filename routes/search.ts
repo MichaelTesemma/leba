@@ -519,31 +519,65 @@ function parseSize(str: string): number {
   return Math.round(num * (multipliers[unit] || 1));
 }
 
+/**
+ * Wrap a promise with a timeout that returns [] on timeout instead of rejecting.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => {
+      log("warn", "Provider timed out", { provider: label, ms });
+      resolve([] as unknown as T);
+    }, ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      () => { clearTimeout(timer); resolve([] as unknown as T); },
+    );
+  });
+}
+
 async function searchTorrents(query: string, imdbId?: string): Promise<SearchResult[]> {
-  const [tpb, eztv, yts, x1337, tgx, btdigg, bitsearch, bt4g, lime, nyaa] = await Promise.allSettled([
+  // Tier 1: Fast JSON APIs (3s timeout)
+  const tier1 = [
     searchTPB(query),
-    searchEZTV(query, imdbId),
     searchYTS(query),
-    search1337x(query),
+    ...(imdbId ? [searchEZTV(query, imdbId)] : []),
+  ].map((p, i) => {
+    const names = ["tpb", "yts", "eztv"];
+    return withTimeout(p, 3000, names[i]);
+  });
+
+  // Tier 2: Structured HTML sites (5s timeout)
+  const tier2 = [
     searchTorrentGalaxy(query),
-    searchBTDigg(query),
     searchBitsearch(query),
     searchBT4G(query),
+    search1337x(query),
+  ].map((p, i) => {
+    const names = ["tgx", "bitsearch", "bt4g", "1337x"];
+    return withTimeout(p, 5000, names[i]);
+  });
+
+  // Tier 3: DHT indexers and niche sites (7s timeout) — run in background
+  const tier3 = [
+    searchBTDigg(query),
     searchLimeTorrents(query),
     searchNyaa(query),
+  ].map((p, i) => {
+    const names = ["btdigg", "lime", "nyaa"];
+    return withTimeout(p, 7000, names[i]);
+  });
+
+  // Wait for all tiers in parallel — slowest takes 7s max (not 12s × 10)
+  const [r1, r2, r3] = await Promise.all([
+    Promise.allSettled(tier1),
+    Promise.allSettled(tier2),
+    Promise.allSettled(tier3),
   ]);
 
   const all: SearchResult[] = [
-    ...(tpb.status === "fulfilled" ? tpb.value : []),
-    ...(eztv.status === "fulfilled" ? eztv.value : []),
-    ...(yts.status === "fulfilled" ? yts.value : []),
-    ...(x1337.status === "fulfilled" ? x1337.value : []),
-    ...(tgx.status === "fulfilled" ? tgx.value : []),
-    ...(btdigg.status === "fulfilled" ? btdigg.value : []),
-    ...(bitsearch.status === "fulfilled" ? bitsearch.value : []),
-    ...(bt4g.status === "fulfilled" ? bt4g.value : []),
-    ...(lime.status === "fulfilled" ? lime.value : []),
-    ...(nyaa.status === "fulfilled" ? nyaa.value : []),
+    ...r1.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
+    ...r2.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
+    ...r3.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
   ];
 
   // Dedupe by infoHash, keep the one with more seeders
@@ -559,16 +593,9 @@ async function searchTorrents(query: string, imdbId?: string): Promise<SearchRes
   const merged = [...seen.values()];
   log("info", "Multi-provider search", {
     query,
-    tpb: tpb.status === "fulfilled" ? tpb.value.length : 0,
-    eztv: eztv.status === "fulfilled" ? eztv.value.length : 0,
-    yts: yts.status === "fulfilled" ? yts.value.length : 0,
-    "1337x": x1337.status === "fulfilled" ? x1337.value.length : 0,
-    tgx: tgx.status === "fulfilled" ? tgx.value.length : 0,
-    btdigg: btdigg.status === "fulfilled" ? btdigg.value.length : 0,
-    bitsearch: bitsearch.status === "fulfilled" ? bitsearch.value.length : 0,
-    bt4g: bt4g.status === "fulfilled" ? bt4g.value.length : 0,
-    lime: lime.status === "fulfilled" ? lime.value.length : 0,
-    nyaa: nyaa.status === "fulfilled" ? nyaa.value.length : 0,
+    tier1_ms: 3000,
+    tier2_ms: 5000,
+    tier3_ms: 7000,
     merged: merged.length,
   });
 
