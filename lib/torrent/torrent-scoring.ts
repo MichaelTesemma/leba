@@ -50,13 +50,16 @@ export function scoreTorrent(result: TorrentResult, title: string, year: number 
   score += seederScore;
 
   // Size efficiency: smaller files download faster → play sooner.
-  // Inverse relationship: halving the size should give a meaningful bonus.
-  // Uses 1/size curve so 0.3GB vs 0.6GB is a real difference, not just 1 point.
-  // Penalty for bloated files (>8GB).
+  // ≤ 3GB = full bonus (sweet spot for 1080p streaming).
+  // > 3GB = progressive penalty (larger files buffer slower).
   if (result.size && result.size > 0) {
     const gb = result.size / (1024 ** 3);
-    if (gb <= 6) score += Math.round(Math.min(15, 4 / gb));  // 0.3GB→+13, 0.6GB→+7, 1GB→+4, 2GB→+2, 4GB→+1, 6GB→+1
-    else if (gb > 8) score -= Math.round(Math.min(10, (gb - 8) * 2)); // 10GB→-4, 15GB→-10(cap)
+    if (gb <= 3) {
+      score += Math.round(Math.min(15, 4 / gb)); // 0.3GB→+13, 0.5GB→+8, 1GB→+4, 2GB→+2, 3GB→+1
+    } else {
+      const penalty = Math.round(Math.min(15, (gb - 3) * 2.5)); // 3.1GB→0, 4GB→-3, 5GB→-5, 8GB→-13, 10GB→-15
+      score -= penalty;
+    }
   }
 
   return score;
