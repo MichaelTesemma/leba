@@ -503,19 +503,46 @@ export default function Player() {
   // ── Buffering diagnostics ──
   const [showBufferDiag, setShowBufferDiag] = useState(false);
   const [bufferDiag, setBufferDiag] = useState("");
-  const bufferCheckTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const art = artRef.current;
-    if (!art) return;
-
     let stalledAt = 0;
     let diagShown = false;
 
     const checkBuffer = setInterval(() => {
+      const art = artRef.current;
+      if (!art) return;
       const video = art.video;
-      if (!video || video.readyState < 3) return; // Not enough data to judge
+      if (!video || video.readyState === 0) return; // Not loaded yet
 
+      // Check for explicit video errors (dead connection, sleep/wake, network loss)
+      if (video.error) {
+        const err = video.error;
+        const code = err.code || err.MEDIA_ERR_DECODE;
+        const messages: Record<number, string> = {
+          1: "Video loading aborted by user.",
+          2: "Network error — connection lost (sleep/wake recovery needed).",
+          3: "Video decoding failed or format not supported.",
+          4: "Video source not available (network unreachable).",
+        };
+        if (!diagShown) {
+          diagShown = true;
+          setBufferDiag(messages[code] || "Playback error occurred.");
+          setShowBufferDiag(true);
+        }
+        return;
+      }
+
+      // Check for network state: 3 = NETWORK_NO_SOURCE (dead TCP after sleep)
+      if (video.networkState === 3 && !video.paused) {
+        if (!diagShown) {
+          diagShown = true;
+          setBufferDiag("Network connection lost — try refreshing the page.");
+          setShowBufferDiag(true);
+        }
+        return;
+      }
+
+      // Buffering: has some data but not enough to play smoothly
       const isBuffering = video.readyState < 4 && !video.paused && video.currentTime > 1;
       if (!isBuffering) {
         stalledAt = 0;
@@ -531,21 +558,19 @@ export default function Player() {
 
       if (stalledMs > 5000 && !diagShown) {
         diagShown = true;
-        // Check common breaking points
-        const hasPeers = numPeers > 0;
-        const hasSpeed = dlSpeed > 10000; // >10KB/s
-        const hasProgress = dlProgress > 0;
+        // Use refs for real-time values (React state may be stale)
+        const peers = dlPeersRef.current;
+        const speed = dlSpeedRef.current;
+        const progress = dlProgressRef.current;
 
-        if (!hasPeers) {
+        if (peers === 0) {
           setBufferDiag("No peers connected — the torrent may have no seeders.");
-        } else if (!hasSpeed) {
-          setBufferDiag(`${numPeers} peer${numPeers > 1 ? "s" : ""} connected but transfer is stalled.`);
-        } else if (!hasProgress) {
-          setBufferDiag("Peers found but not receiving data — possible NAT/firewall issue.");
-        } else if (dlProgress < 0.5) {
-          setBufferDiag(`Downloading... ${Math.round(dlProgress * 100)}% buffered. Waiting for more data.`);
+        } else if (speed < 10000) {
+          setBufferDiag(`${peers} peer${peers > 1 ? "s" : ""} connected but transfer is stalled.`);
+        } else if (progress < 0.5) {
+          setBufferDiag(`Downloading… ${Math.round(progress * 100)}% buffered. Waiting for more data.`);
         } else {
-          setBufferDiag("Connection to server interrupted — check your internet connection.");
+          setBufferDiag("Connection interrupted — check your internet connection.");
         }
         setShowBufferDiag(true);
       }
@@ -555,7 +580,7 @@ export default function Player() {
       clearInterval(checkBuffer);
       setShowBufferDiag(false);
     };
-  }, [numPeers, dlSpeed, dlProgress]);
+  }, []);
 
   // ── Watch history progress reporting ──
   reportProgressRef.current = () => {

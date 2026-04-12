@@ -428,6 +428,11 @@
 }
 
 /* ── Buffering diagnostic overlay ── */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .player-buffering-overlay {
   position: absolute;
   top: 50%;
@@ -457,7 +462,7 @@
   border: 3px solid rgba(255, 255, 255, 0.15);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: spin 2s linear infinite;
 }
 
 .player-buffering-text {
