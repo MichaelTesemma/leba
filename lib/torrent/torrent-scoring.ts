@@ -30,8 +30,8 @@ export function scoreTorrent(result: TorrentResult, title: string, year: number 
 
   let resScore = 0;
   if (/1080p/.test(name)) resScore = 20;
-  else if (/2160p|4k/i.test(name)) resScore = 15;
   else if (/720p/.test(name)) resScore = 10;
+  // 4K/2160p and above get no points — larger files buffer slower, no practical benefit
   score += resScore;
 
   // Source tag: light tiebreaker, not a deciding factor
@@ -66,8 +66,7 @@ export function parseTags(name: string): string[] {
   const tags: string[] = [];
   const n = name;
   // Resolution
-  if (/2160p/i.test(n)) tags.push("4K");
-  else if (/1080p/i.test(n)) tags.push("1080p");
+  if (/1080p/i.test(n)) tags.push("1080p");
   else if (/720p/i.test(n)) tags.push("720p");
   else if (/480p/i.test(n)) tags.push("480p");
   // Source

@@ -214,6 +214,14 @@
   border-color: rgba(201, 168, 76, 0.2);
 }
 
+.player-source-item.recommended {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.player-source-item.recommended:hover {
+  border-color: rgba(34, 197, 94, 0.5);
+}
+
 .player-source-item-main {
   flex: 1;
   min-width: 0;
@@ -248,7 +256,12 @@
 
 .player-source-tag.current {
   background: rgba(201, 168, 76, 0.15);
-  color: var(--accent-bright);
+  color: #c9a84c;
+}
+
+.player-source-tag.recommended {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
 }
 
 .player-source-tag.cached {

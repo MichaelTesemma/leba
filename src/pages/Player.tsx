@@ -58,11 +58,11 @@ export default function Player() {
   const qualityGroups = useMemo(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const groups: Record<string, any[]> = {};
-    const order = ["4K", "1080p", "720p", "480p"];
+    const order = ["1080p", "720p", "480p"];
     for (const group of order) groups[group] = [];
     groups["Other"] = [];
     for (const s of sources) {
-      const tag = s.tags?.find((t: string) => ["4K", "1080p", "720p", "480p"].includes(t));
+      const tag = s.tags?.find((t: string) => ["1080p", "720p", "480p"].includes(t));
       (groups[tag || "Other"] ?? groups["Other"]).push(s);
     }
     // Sort each group by score descending
@@ -71,7 +71,7 @@ export default function Player() {
   }, [sources]);
 
   const currentQuality = useMemo(() => {
-    const tag = tags?.find((t: string) => ["4K", "1080p", "720p", "480p"].includes(t));
+    const tag = tags?.find((t: string) => ["1080p", "720p", "480p"].includes(t));
     return tag || "Auto";
   }, [tags]);
 
@@ -633,18 +633,20 @@ export default function Player() {
                   {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {groupSources.map((s: any) => {
                 const isCurrent = s.infoHash === active?.infoHash;
+                const isRecommended = sources.length > 0 && s.infoHash === sources[0].infoHash;
                 const live = isCurrent ? livePeers[s.infoHash] : null;
                 const isSwitching = switchingSource === s.infoHash;
                 return (
                   <button
                     key={s.infoHash}
-                    className={`player-source-item${isCurrent ? " active" : ""}`}
+                    className={`player-source-item${isCurrent ? " active" : ""}${isRecommended ? " recommended" : ""}`}
                     onClick={() => handleSwitchSource(s)}
                     disabled={isSwitching}
                   >
                     <div className="player-source-item-main">
                       <span className="player-source-item-name">{s.name}</span>
                       <div className="player-source-item-tags">
+                        {isRecommended && !isCurrent && <span className="player-source-tag recommended">Recommended</span>}
                         {isCurrent && <span className="player-source-tag current">Playing</span>}
                         {s.cached && <span className="player-source-tag cached">Cached</span>}
                         {s.seasonPack && <span className="player-source-tag season-pack">Season Pack</span>}

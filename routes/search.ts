@@ -337,16 +337,29 @@ app.post("/api/search-streams", async (req: Request, res: Response) => {
         };
       })
       .filter((r) => r.score > 0)
-      .sort((a, b) => b.score - a.score || b.seeders - a.seeders)
-      .slice(0, 50);
+      // Drop 4K/2160p+ — larger files, slower buffering, no benefit over 1080p
+      .filter((r) => !/2160p|4k/i.test(r.name))
+      .sort((a, b) => b.score - a.score || b.seeders - a.seeders);
+
+    // Promote the best 1080p torrent to position 0
+    const best1080 = scored.find((r) => /1080p/i.test(r.name));
+    if (best1080) {
+      const topIdx = scored.indexOf(best1080);
+      if (topIdx > 0) {
+        scored.splice(topIdx, 1);
+        scored.unshift(best1080);
+      }
+    }
+
+    const final = scored.slice(0, 50);
 
     // Check debrid cache availability if configured
     const debrid = getDebridProvider();
-    if (debrid && scored.length > 0) {
+    if (debrid && final.length > 0) {
       try {
-        const hashes = scored.map((r) => r.infoHash);
+        const hashes = final.map((r) => r.infoHash);
         const cached = await debrid.checkCached(hashes);
-        for (const r of scored) {
+        for (const r of final) {
           if (cached.get(r.infoHash.toLowerCase())) {
             (r as typeof r & { cached?: boolean }).cached = true;
           }
@@ -356,7 +369,7 @@ app.post("/api/search-streams", async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ results: scored });
+    res.json({ results: final });
   } catch (err) {
     log("err", "Search streams failed", { error: (err as Error).message });
     res.json({ results: [] });
@@ -509,6 +522,8 @@ app.post("/api/auto-play", async (req: Request, res: Response) => {
     const scored = results
       .map((r) => ({ ...r, score: scoreTorrent(r, title, year, type || "movie") }))
       .filter((r) => r.score > 0)
+      // Drop 4K/2160p+ — larger files, slower buffering, no benefit over 1080p
+      .filter((r) => !/2160p|4k/i.test(r.name))
       .sort((a, b) => b.score - a.score || b.seeders - a.seeders);
 
     if (scored.length === 0) {
@@ -516,8 +531,7 @@ app.post("/api/auto-play", async (req: Request, res: Response) => {
       return res.status(404).json({ error: "not_found" });
     }
 
-    // Prefer best 1080p torrent for auto-play (best balance of quality and size)
-    // Fall back to overall best if no 1080p is available
+    // Promote best 1080p to position 0
     const best1080 = scored.find((r) => /1080p/i.test(r.name));
     if (best1080) {
       const topIdx = scored.indexOf(best1080);
