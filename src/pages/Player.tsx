@@ -329,7 +329,21 @@ export default function Player() {
       });
 
       art.on("ready", () => {
-        art.play();
+        // Browser autoplay policy: start muted to bypass the restriction,
+        // then restore the user's volume after playback begins.
+        const savedVolume = art.volume;
+        art.muted = true;
+        art.play().then(() => {
+          // Unmute after a short delay so the browser considers it "user-initiated"
+          setTimeout(() => {
+            art.muted = false;
+            art.volume = savedVolume;
+          }, 500);
+        }).catch(() => {
+          // If autoplay still fails (e.g. strict policies), leave muted
+          art.muted = false;
+          art.volume = savedVolume;
+        });
       });
 
       // Register command handlers for remote control

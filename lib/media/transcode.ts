@@ -285,7 +285,6 @@ export function serveLiveTranscode(opts: LiveTranscodeOpts, req: Request, res: R
     "Content-Type": "video/mp4",
     "Transfer-Encoding": "chunked",
     "X-Accel-Buffering": "no",
-    "Cache-Control": "no-cache",
   });
 
   ffmpeg.stdout!.pipe(res);
