@@ -337,6 +337,7 @@ export default function Player() {
         autoPlayback: true,
         airplay: true,
         lang: navigator.language.toLowerCase().startsWith("zh") ? "zh-cn" : "en",
+        loading: false, // Disable built-in loading — use custom buffering overlay
         controls: [
           ...(isTV ? [{
             name: "episodes",
