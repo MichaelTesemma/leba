@@ -428,11 +428,6 @@
 }
 
 /* ── Buffering diagnostic overlay ── */
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 .player-buffering-overlay {
   position: absolute;
   top: 50%;
@@ -442,7 +437,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: rgba(0, 0, 0, 0.85);
   padding: 24px 32px;
   border-radius: 12px;
@@ -456,13 +451,58 @@
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-.player-buffering-spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 2s linear infinite;
+.player-buffering-progress {
+  width: 100%;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-buffering-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.player-buffering-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-bright));
+  border-radius: 3px;
+  transition: width 0.3s ease;
+  position: relative;
+}
+
+.player-buffering-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.player-buffering-progress-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-bright);
+  font-variant-numeric: tabular-nums;
 }
 
 .player-buffering-text {
@@ -504,6 +544,13 @@
 /* Override Artplayer theme to match Leba's cyan accent */
 .player-art-container .art-video-player {
   --art-theme: #38bdf8;
+}
+
+/* Hide Artplayer's built-in loading spinner */
+.player-art-container .art-loading,
+.player-art-container .art-loading-icon,
+.player-art-container .art-state .art-icon-loading {
+  display: none !important;
 }
 
 /* ── Torrent not found error overlay ── */

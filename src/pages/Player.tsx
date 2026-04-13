@@ -402,6 +402,7 @@ export default function Player() {
 
       // ── Wire up events ──
       art.on("video:loadedmetadata", () => {
+        setIsInitialLoad(false);
         const d = art.duration;
         effectiveTimeRef.current = { time: art.currentTime, duration: d, ts: Date.now() };
         // Restore saved position
@@ -504,6 +505,7 @@ export default function Player() {
   // ── Buffering diagnostics ──
   const [showBufferDiag, setShowBufferDiag] = useState(false);
   const [bufferDiag, setBufferDiag] = useState("");
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   useEffect(() => {
     let stalledAt = 0;
@@ -817,15 +819,24 @@ export default function Player() {
         </button>
       )}
 
-      {showBufferDiag && (
+      {(isInitialLoad || showBufferDiag) && (
         <div className="player-buffering-overlay">
-          <div className="player-buffering-spinner" />
-          <div className="player-buffering-text">Buffering…</div>
-          <div className="player-buffering-detail">{bufferDiag}</div>
+          <div className="player-buffering-progress">
+            <div className="player-buffering-progress-track">
+              <div
+                className="player-buffering-progress-fill"
+                style={{ width: `${Math.min(dlProgress * 100, 100)}%` }}
+              />
+            </div>
+            <span className="player-buffering-progress-text">
+              {Math.round(dlProgress * 100)}%
+            </span>
+          </div>
+          <div className="player-buffering-text">{isInitialLoad ? "Loading…" : "Buffering…"}</div>
+          {showBufferDiag && <div className="player-buffering-detail">{bufferDiag}</div>}
           <div className="player-buffering-meta">
             <span>{numPeers} peer{numPeers > 1 ? "s" : ""}</span>
             {dlSpeed > 0 && <span>· {formatBytes(dlSpeed)}/s</span>}
-            {dlProgress > 0 && <span>· {Math.round(dlProgress * 100)}%</span>}
           </div>
         </div>
       )}
