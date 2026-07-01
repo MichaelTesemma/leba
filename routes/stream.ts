@@ -9,23 +9,8 @@ import {
   probeMedia as _probeMedia, serveFile, serveFromTorrent,
   serveLiveTranscode as _serveLiveTranscode,
 } from "../lib/media/transcode.js";
-import type { ClientCtx, CacheCtx, StreamTrackingCtx, LogCtx, DebridCtx, Torrent, TorrentFile } from "../lib/types.js";
-
-
-
-/**
- * Preload the first ~2 MB of a torrent file to speed up time-to-first-frame.
- * The MP4 moov atom (required for playback) typically lives in the first few pieces.
- */
-function preloadFirstPieces(file: TorrentFile, torrent: Torrent): void {
-  const target = Math.min(2 * 1024 * 1024, file.length); // 2 MB or file size
-  const piecesNeeded = Math.ceil(target / torrent.pieceLength);
-  const startPiece = Math.ceil(file.offset / torrent.pieceLength);
-  const endPiece = Math.min(startPiece + piecesNeeded - 1, file._endPiece);
-
-  // Select the first pieces with highest priority (1 = highest in WebTorrent)
-  torrent.select(startPiece, endPiece, 1);
-}
+import type { ClientCtx, CacheCtx, StreamTrackingCtx, LogCtx, DebridCtx } from "../lib/types.js";
+import { preloadFirstPieces } from "../lib/media/preload.js";
 
 /**
  * Validate that a URL is safe to proxy — rejects internal/private IPs and dangerous schemes.
@@ -123,7 +108,7 @@ export default function streamRoutes(app: Express, ctx: ClientCtx & CacheCtx & S
       }
     });
 
-    const complete = isFileComplete(torrent, file);
+    const complete = await isFileComplete(torrent, file);
     const filePath = diskPath(torrent, file);
 
     // Verify file is real media — only when complete.
@@ -237,9 +222,6 @@ export default function streamRoutes(app: Express, ctx: ClientCtx & CacheCtx & S
       }
 
       res.status(status);
-
-      // Force fresh connection — prevents stale keep-alive after sleep/wake
-      res.setHeader("Connection", "close");
 
       // Forward relevant headers
       const fwd = ["content-type", "content-length", "content-range", "accept-ranges"];

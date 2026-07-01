@@ -72,15 +72,13 @@ export default function ContentRow({ title, fetchFn, filterAvailability = false 
       <div className="content-row-wrapper">
         <button className="content-row-arrow left" onClick={() => scroll(-1)}>&lsaquo;</button>
         <div className="content-row-scroll" ref={scrollRef}>
-          {items === null && !isVisible
-            ? null
-            : items === null
-              ? Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="movie-card">
-                    <div className="movie-card-poster skeleton" />
-                  </div>
-                ))
-              : items.map((item) => <MovieCard key={item.id} item={item} />)}
+          {items === null
+            ? Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="movie-card">
+                  <div className="movie-card-poster skeleton" />
+                </div>
+              ))
+            : items.map((item) => <MovieCard key={item.id} item={item} />)}
         </div>
         <button className="content-row-arrow right" onClick={() => scroll(1)}>&rsaquo;</button>
       </div>

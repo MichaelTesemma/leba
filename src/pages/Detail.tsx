@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { fetchMovie, fetchTV, fetchSeason, fetchReviews, autoPlay, searchStreams, playTorrent, backdrop, poster, still, fetchResumePoint, fetchSeriesProgress, checkSaved, toggleSaved, reportWatchProgress } from "../lib/api";
+import { fetchMovie, fetchTV, fetchSeason, fetchReviews, autoPlay, searchStreams, playTorrent, backdrop, poster, still, fetchResumePoint, fetchSeriesProgress, checkSaved, toggleSaved, reportWatchProgress, rateItem, fetchRatings } from "../lib/api";
 import { ratingColor, formatBytes } from "../lib/utils";
 import { useRemoteMode } from "../lib/PlayerContext";
 import SourcePicker from "../components/SourcePicker";
@@ -39,12 +39,27 @@ export default function Detail() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [episodeProgress, setEpisodeProgress] = useState<Map<string, any>>(new Map());
   const [isSaved, setIsSaved] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [myRating, setMyRating] = useState<number | null>(null);
+  const [ratingsLoaded, setRatingsLoaded] = useState(false);
 
   useEffect(() => {
     setData(null);
     setPlayState(null);
     const fetcher = type === "tv" ? fetchTV : fetchMovie;
     fetcher(id!).then(setData).catch(() => {});
+  }, [id, type]);
+
+  // Load existing rating for this item
+  useEffect(() => {
+    if (!id) return;
+    setMyRating(null);
+    setRatingsLoaded(false);
+    fetchRatings().then((ratings) => {
+      const found = ratings.find((r: { tmdbId: number }) => r.tmdbId === Number(id));
+      if (found) setMyRating(found.value);
+      setRatingsLoaded(true);
+    }).catch(() => setRatingsLoaded(true));
   }, [id, type]);
 
   useEffect(() => {
@@ -203,6 +218,20 @@ export default function Detail() {
     }
   }
 
+  async function handleRate(value: number) {
+    const newVal = myRating === value ? 0 : value;
+    setMyRating(newVal || null);
+    if (newVal > 0) {
+      await rateItem({
+        tmdbId: Number(id),
+        mediaType: type,
+        title: data.title || data.name,
+        posterPath: data.poster_path ?? null,
+        value: newVal,
+      }).catch(() => setMyRating(myRating));
+    }
+  }
+
   async function handlePlay(season?: number, episode?: number) {
     if (playState === "loading") return;
     setPlayState("loading");
@@ -296,6 +325,23 @@ export default function Detail() {
                   {g.name}
                 </span>
               ))}
+            </div>
+            <div className="detail-user-rating">
+              <span className="detail-user-rating-label">Your Rating</span>
+              <div className="detail-stars">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    className={`detail-star${star <= (myRating || 0) ? " filled" : ""}`}
+                    onClick={() => handleRate(star)}
+                    aria-label={`Rate ${star} star${star !== 1 ? "s" : ""}`}
+                  >
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill={star <= (myRating || 0) ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
             </div>
             <p className="detail-overview">{data.overview}</p>
             <div className="detail-actions">

@@ -38,6 +38,9 @@ import cacheRoutes from "./routes/cache.js";
 import openUrlRoutes from "./routes/open-url.js";
 import storageRoutes from "./routes/storage.js";
 import updateRoutes from "./routes/update.js";
+import recommendationRoutes from "./routes/recommendations.js";
+import ratingRoutes from "./routes/ratings.js";
+import profileRoutes from "./routes/profile.js";
 import { sweepOldFiles, evictIfLowSpace } from "./lib/cache/cache-cleanup.js";
 import type {
   ServerContext, TorrentClient, IdleTracker, RCSession,
@@ -164,6 +167,9 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 rcRoutes(app, ctx);
+recommendationRoutes(app, ctx);
+ratingRoutes(app, ctx);
+profileRoutes(app, ctx);
 tmdbRoutes(app, ctx);
 mediaRoutes(app, ctx);
 statusRoutes(app, ctx);

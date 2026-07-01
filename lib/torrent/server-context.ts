@@ -1,5 +1,5 @@
 import path from "path";
-import { statSync } from "fs";
+import { promises as fsp } from "fs";
 // @ts-expect-error — no @types/webtorrent available
 import WebTorrent from "webtorrent";
 import crypto from "crypto";
@@ -10,6 +10,7 @@ import { dumpRcSessions } from "../storage/rc-sessions.js";
 import { JsonStore } from "../storage/store.js";
 import { WatchHistory } from "../storage/watch-history.js";
 import { SavedList } from "../storage/saved-list.js";
+import { RatingStore } from "../storage/ratings.js";
 import type { WatchRecord } from "../storage/watch-history.js";
 import type { SavedItem } from "../storage/saved-list.js";
 import type { Request, Response, NextFunction } from "express";
@@ -20,6 +21,7 @@ import type {
 } from "../types.js";
 import { SearchRegistry } from "../search/registry.js";
 import { DebridService } from "./debrid-service.js";
+import { WarmPool } from "../media/warm-pool.js";
 
 interface CreateContextOverrides {
   client?: TorrentClient;
@@ -98,10 +100,10 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
     return path.join(DOWNLOAD_PATH, file.path);
   }
 
-  function isFileComplete(torrent: Torrent, file: TorrentFile): boolean {
+  async function isFileComplete(torrent: Torrent, file: TorrentFile): Promise<boolean> {
     if (file.length > 0 && file.downloaded < file.length) return false;
     try {
-      const stat = statSync(diskPath(torrent, file));
+      const stat = await fsp.stat(diskPath(torrent, file));
       return stat.size === file.length;
     } catch {
       return false;
@@ -109,19 +111,18 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
   }
 
   // Clean all caches for a torrent — delegates to central registry
-  function cleanupTorrentCaches(infoHash: string, torrent?: Torrent): void {
+  async function cleanupTorrentCaches(infoHash: string, torrent?: Torrent): Promise<void> {
     // Persist paths for completed files so they can be served after torrent removal
     if (torrent?.files) {
-      for (let i = 0; i < torrent.files.length; i++) {
-        const f = torrent.files[i];
+      await Promise.all(torrent.files.map(async (f: TorrentFile, i: number) => {
         const fp = diskPath(torrent, f);
         try {
-          const stat = statSync(fp);
+          const stat = await fsp.stat(fp);
           if (stat.size === f.length && stat.size > 0) {
             completedFiles.set(`${infoHash}:${i}`, { path: fp, size: f.length, name: f.name });
           }
         } catch { /* file doesn't exist */ }
-      }
+      }));
     }
     const filePaths = torrent?.files
       ? torrent.files.map((f: TorrentFile) => diskPath(torrent, f))
@@ -141,27 +142,32 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
     if (!entry) return;
     entry.count = Math.max(0, entry.count - 1);
     if (entry.count > 0) return;
-    // All streams closed — kill background transcodes after 2 min
-    // If torrent has completed files on disk, just pause it instead of destroying
-    // (destroying forces a slow re-add from peers next time the user plays it)
-    entry.idleTimer = setTimeout(() => {
+    // All streams closed — give the user 15 min to resume playback
+    // before pausing or destroying. Covers bathroom breaks, pauses,
+    // and short interruptions without forcing a re-add +
+    // re-download from peers next play.
+    entry.idleTimer = setTimeout(async () => {
       const torrent = client.torrents.find((t: Torrent) => t.infoHash === infoHash);
       if (torrent) {
-        const hasCompleteFiles = torrent.files.some((f: TorrentFile) => {
-          try { return f.length > 0 && statSync(diskPath(torrent, f)).size === f.length; }
-          catch { return false; }
-        });
+        const results = await Promise.all(torrent.files.map(async (f: TorrentFile) => {
+          try {
+            if (f.length === 0) return false;
+            const stat = await fsp.stat(diskPath(torrent, f));
+            return stat.size === f.length;
+          } catch { return false; }
+        }));
+        const hasCompleteFiles = results.some(Boolean);
         if (hasCompleteFiles) {
           if (!torrent.paused) torrent.pause();
           log("info", "Paused idle torrent (files on disk)", { name: torrent.name });
         } else {
-          cleanupTorrentCaches(infoHash, torrent);
+          await cleanupTorrentCaches(infoHash, torrent);
           log("info", "Auto-removing idle torrent", { name: torrent.name });
           torrent.destroy({ destroyStore: false });
         }
       }
       streamTracker.delete(infoHash);
-    }, 2 * 60 * 1000);
+    }, 15 * 60 * 1000);
     if (entry.idleTimer.unref) entry.idleTimer.unref();
   }
 
@@ -178,6 +184,10 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
 
   const searchRegistry = new SearchRegistry({ log });
   const debrid = new DebridService();
+  const warmPool = new WarmPool(log);
+  const ratings = new RatingStore(
+    new JsonStore(path.join(profileDir, "ratings.json"), 5000, log),
+  );
 
   return {
     get client() { return client; },
@@ -185,7 +195,7 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
     durationCache, seekIndexCache, seekIndexPending,
     activeFiles, completedFiles, streamTracker, activeTranscodes,
     availabilityCache, AVAIL_TTL, introCache, probeCache, activeReaders, pcAuthToken,
-    rcSessions, watchHistory, savedList, searchRegistry, debrid,
+    rcSessions, watchHistory, savedList, searchRegistry, debrid, warmPool, ratings,
     log, diskPath, isFileComplete, cleanupTorrentCaches,
     trackStreamOpen, trackStreamClose, streamTracking,
   };

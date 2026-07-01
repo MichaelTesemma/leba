@@ -127,6 +127,46 @@
   color: var(--accent-bright);
 }
 
+.detail-user-rating {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.detail-user-rating-label {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.detail-stars {
+  display: flex;
+  gap: 2px;
+}
+
+.detail-star {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  transition: color var(--transition), transform var(--transition);
+  cursor: pointer;
+}
+
+.detail-star:hover {
+  color: var(--accent-bright);
+  transform: scale(1.2);
+}
+
+.detail-star.filled {
+  color: var(--accent);
+}
+
 .detail-overview {
   color: var(--text-secondary);
   line-height: 1.7;

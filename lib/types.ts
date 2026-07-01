@@ -6,6 +6,7 @@ import type { Request, Response, NextFunction } from "express";
 import type { Readable } from "stream";
 import type { WatchHistory } from "./storage/watch-history.js";
 import type { SavedList } from "./storage/saved-list.js";
+import type { RatingStore } from "./storage/ratings.js";
 
 // ── Log ───────────────────────────────────────────────────────────────
 
@@ -266,7 +267,7 @@ export interface ClientCtx {
   DOWNLOAD_PATH: string;
   TRANSCODE_PATH: string;
   diskPath(torrent: Torrent, file: TorrentFile): string;
-  isFileComplete(torrent: Torrent, file: TorrentFile): boolean;
+  isFileComplete(torrent: Torrent, file: TorrentFile): Promise<boolean>;
 }
 
 export interface CacheCtx {
@@ -282,12 +283,17 @@ export interface CacheCtx {
   introCache: Map<string, IntroEntry>;
   probeCache: Map<string, ProbeResult>;
   activeReaders: Map<object, number>;
+  warmPool?: { acquire(): void; discard(): void };
 }
 
 export interface StorageCtx {
   watchHistory: WatchHistory;
   savedList: SavedList;
   rcSessions: Map<string, RCSession>;
+}
+
+export interface RatingsCtx {
+  ratings: RatingStore;
 }
 
 export interface StreamTrackingCtx {
@@ -314,4 +320,4 @@ export interface DebridCtx {
 }
 
 // Full server context — union of all slices for backward compat / server.ts
-export interface ServerContext extends ClientCtx, CacheCtx, StorageCtx, StreamTrackingCtx, CacheCleanupCtx, LogCtx, SearchCtx, DebridCtx {}
+export interface ServerContext extends ClientCtx, CacheCtx, StorageCtx, StreamTrackingCtx, CacheCleanupCtx, LogCtx, SearchCtx, DebridCtx, RatingsCtx {}

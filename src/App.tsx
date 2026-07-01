@@ -16,6 +16,8 @@ const Player = lazyComponent(() => import("./pages/Player"));
 const Search = lazyComponent(() => import("./pages/Search"));
 const MyList = lazyComponent(() => import("./pages/MyList"));
 const Remote = lazyComponent(() => import("./pages/Remote"));
+const Rate = lazyComponent(() => import("./pages/Rate"));
+const Taste = lazyComponent(() => import("./pages/Taste"));
 
 function lazyComponent<T extends React.ComponentType<React.PropsWithChildren<unknown>>>(importFn: () => Promise<{ default: T }>) {
   const Lazy = React.lazy(importFn);
@@ -101,6 +103,8 @@ function AppRoutes() {
           <Route path="/tv/:id" element={<Detail />} />
           <Route path="/search" element={<Search />} />
           <Route path="/my-list" element={<MyList />} />
+          <Route path="/rate" element={<Rate />} />
+          <Route path="/taste" element={<Taste />} />
         </Routes>
         {!isRemote && <MiniPlayer />}
         {isRemote && <RemoteNowPlaying />}

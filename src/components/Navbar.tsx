@@ -106,18 +106,20 @@ export default function Navbar() {
         </svg>
         <span>leba</span>
       </Link>
-      <form className="navbar-search" onSubmit={handleSubmit}>
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-muted)">
-          <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-        </svg>
-        <input
-          type="text"
-          placeholder="Search movies & shows..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          disabled={loading}
-        />
-      </form>
+      {location.pathname !== "/rate" && location.pathname !== "/taste" && (
+        <form className="navbar-search" onSubmit={handleSubmit}>
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="var(--text-muted)">
+            <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search movies & shows..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            disabled={loading}
+          />
+        </form>
+      )}
       {!isRemote && (
         <>
           {vpn?.configured && (
@@ -134,6 +136,18 @@ export default function Navbar() {
             </button>
           )}
           <div className="navbar-actions">
+            <Link to="/taste" className={`navbar-list-btn${location.pathname === "/taste" ? " active" : ""}`} title="My Taste">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+              </svg>
+              <span>Taste</span>
+            </Link>
+            <Link to="/rate" className={`navbar-list-btn${location.pathname === "/rate" ? " active" : ""}`} title="Rate Movies">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <span>Rate</span>
+            </Link>
             <Link to="/my-list" className={`navbar-list-btn${location.pathname === "/my-list" ? " active" : ""}`} title="My List">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z" />

@@ -128,6 +128,35 @@ export function fetchAudioTracks(infoHash: string, fileIndex: string | number): 
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchRecommendations(type?: "movie" | "tv"): Promise<{ results: any[] }> {
+  try {
+    const qs = type ? `?type=${type}` : "";
+    const data = await fetch(`/api/recommendations${qs}`).then((r) => r.json());
+    const recs = (data.recommendations || []).map((r: any) => ({
+      id: r.tmdbId,
+      media_type: r.mediaType,
+      title: r.title,
+      name: r.title,
+      poster_path: r.posterPath,
+      release_date: r.year ? `${r.year}-01-01` : null,
+      first_air_date: r.year ? `${r.year}-01-01` : null,
+      vote_average: r.voteAverage,
+    }));
+    // No recommendations — fall back to trending (cold start or TMDB failure)
+    if (recs.length === 0) {
+      try {
+        const trending = await fetch("/api/tmdb/trending?page=1").then((r) => r.json());
+        return { results: trending.results || [] };
+      } catch {
+        return { results: [] };
+      }
+    }
+    return { results: recs };
+  } catch {
+    return { results: [] };
+  }
+}
+
 export function fetchReviews(type: string, id: string | number): Promise<any> {
   return get(`/api/reviews/${type}/${id}`);
 }
@@ -290,6 +319,43 @@ export async function dismissWatchHistory(data: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
+}
+
+// ── Ratings ──────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function fetchRatings(): Promise<any[]> {
+  return get("/api/ratings");
+}
+
+export async function rateItem(data: {
+  tmdbId: number; mediaType: string; title: string; posterPath: string | null; value: number;
+}): Promise<void> {
+  await fetch("/api/ratings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function fetchRatingQueue(type: string, page = 1): Promise<any[]> {
+  return get(`/api/ratings/queue?type=${type}&page=${page}`);
+}
+
+export async function skipItem(tmdbId: number, mediaType: string): Promise<void> {
+  await fetch("/api/ratings/skip", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tmdbId, mediaType }),
+  });
+}
+
+// ── Profile ──────────────────────────────────────────────────────
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function fetchProfile(): Promise<any> {
+  return get("/api/profile");
 }
 
 // ── Saved List ───────────────────────────────────────────────────

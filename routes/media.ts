@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs";
-import { createReadStream, statSync, mkdirSync } from "fs";
+import { createReadStream, mkdirSync, promises as fsp } from "fs";
 import { spawn } from "child_process";
 import type { Express, Request, Response } from "express";
 import { jobKey } from "../lib/cache/torrent-caches.js";
@@ -43,7 +43,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
       const file = torrent.files[parseInt(fileIndex, 10)];
       if (!file) return res.status(404).json({ error: "File not found" });
       filePath = diskPath(torrent, file);
-      try { statSync(filePath); } catch {
+      try { fs.statSync(filePath); } catch {
         return res.json({ duration: null });
       }
     } else {
@@ -91,7 +91,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
   });
 
   // Subtitle endpoint - converts any subtitle format to WebVTT
-  app.get("/api/subtitle/:infoHash/:fileIndex", (req: Request, res: Response) => {
+  app.get("/api/subtitle/:infoHash/:fileIndex", async (req: Request, res: Response) => {
     const { infoHash, fileIndex } = req.params as Record<string, string>;
     const torrent = client().torrents.find((t) => t.infoHash === infoHash);
     if (!torrent) return res.status(404).json({ error: "Torrent not found" });
@@ -104,7 +104,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
       return res.status(400).json({ error: "Not a subtitle file" });
     }
 
-    const complete = isFileComplete(torrent, file);
+    const complete = await isFileComplete(torrent, file);
     const filePath = diskPath(torrent, file);
     const offset = parseFloat(req.query.offset as string) || 0;
 
@@ -138,7 +138,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
       if (ext === ".srt") {
         res.setHeader("Content-Type", "text/vtt; charset=utf-8");
         try {
-          const srtContent = fs.readFileSync(filePath, "utf-8");
+          const srtContent = await fsp.readFile(filePath, "utf-8");
           return res.send(srtToVtt(srtContent));
         } catch (err) {
           log("err", "SRT read failed, falling back to stream", { error: (err as Error).message });
@@ -183,7 +183,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
 
 
   // Probe embedded subtitle streams in a video file
-  app.get("/api/subtitles/:infoHash/:fileIndex", (req: Request, res: Response) => {
+  app.get("/api/subtitles/:infoHash/:fileIndex", async (req: Request, res: Response) => {
     res.removeHeader("ETag");
     res.setHeader("Cache-Control", "no-store");
     const { infoHash, fileIndex } = req.params as Record<string, string>;
@@ -195,9 +195,9 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
     if (torrent) {
       const file = torrent.files[parseInt(fileIndex, 10)];
       if (!file) return res.status(404).json({ error: "File not found" });
-      complete = isFileComplete(torrent, file);
+      complete = await isFileComplete(torrent, file);
       filePath = diskPath(torrent, file);
-      try { statSync(filePath); } catch {
+      try { await fsp.stat(filePath); } catch {
         return res.json({ tracks: [], complete: false });
       }
     } else {
@@ -237,7 +237,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
   });
 
   // List embedded audio streams
-  app.get("/api/audio-tracks/:infoHash/:fileIndex", (req: Request, res: Response) => {
+  app.get("/api/audio-tracks/:infoHash/:fileIndex", async (req: Request, res: Response) => {
     res.setHeader("Cache-Control", "no-store");
     const { infoHash, fileIndex } = req.params as Record<string, string>;
     const torrent = client().torrents.find((t) => t.infoHash === infoHash);
@@ -248,9 +248,9 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
     if (torrent) {
       const file = torrent.files[parseInt(fileIndex, 10)];
       if (!file) return res.status(404).json({ error: "File not found" });
-      complete = isFileComplete(torrent, file);
+      complete = await isFileComplete(torrent, file);
       filePath = diskPath(torrent, file);
-      try { statSync(filePath); } catch {
+      try { await fsp.stat(filePath); } catch {
         return res.json({ tracks: [], complete: false });
       }
     } else {
@@ -343,17 +343,21 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
     // This finds episodes that persist on disk after torrent idle-timeout
     // Validate with a quick ffprobe since these may be incomplete downloads
     try {
-      for (const dir of fs.readdirSync(DOWNLOAD_PATH)) {
+      const topDirs = await fsp.readdir(DOWNLOAD_PATH);
+      for (const dir of topDirs) {
         const dirPath = path.join(DOWNLOAD_PATH, dir);
         try {
-          if (!fs.statSync(dirPath).isDirectory()) continue;
-          for (const fname of fs.readdirSync(dirPath)) {
+          const dirStat = await fsp.stat(dirPath);
+          if (!dirStat.isDirectory()) continue;
+          const files = await fsp.readdir(dirPath);
+          for (const fname of files) {
             const ext = path.extname(fname).toLowerCase();
             if (!VIDEO_EXTENSIONS.includes(ext)) continue;
             const fp = path.join(dirPath, fname);
             if (siblingPaths.includes(fp)) continue;
             try {
-              if (statSync(fp).size > 50_000_000) siblingPaths.push(fp);
+              const fStat = await fsp.stat(fp);
+              if (fStat.size > 50_000_000) siblingPaths.push(fp);
             } catch {}
           }
         } catch {}
@@ -405,7 +409,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
   });
 
   // Extract an embedded subtitle stream as WebVTT
-  app.get("/api/subtitle-extract/:infoHash/:fileIndex/:streamIndex", (req: Request, res: Response) => {
+  app.get("/api/subtitle-extract/:infoHash/:fileIndex/:streamIndex", async (req: Request, res: Response) => {
     const params = req.params as Record<string, string>;
     const torrent = client().torrents.find((t) => t.infoHash === params.infoHash);
 
@@ -415,7 +419,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
       const file = torrent.files[parseInt(params.fileIndex, 10)];
       if (!file) return res.status(404).json({ error: "File not found" });
       filePath = diskPath(torrent, file);
-      try { statSync(filePath); } catch {
+      try { await fsp.stat(filePath); } catch {
         return res.status(202).json({ error: "File not on disk yet" });
       }
     } else {
@@ -509,7 +513,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
   });
 
   // Serve an uploaded custom subtitle file, converting to VTT
-  app.get("/api/subtitle/custom/:filename", (req: Request, res: Response) => {
+  app.get("/api/subtitle/custom/:filename", async (req: Request, res: Response) => {
     const { filename } = req.params as Record<string, string>;
 
     // Prevent directory traversal
@@ -525,7 +529,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
     const filePath = path.join(DOWNLOAD_PATH, ".custom-subs", filename);
 
     try {
-      statSync(filePath);
+      await fsp.stat(filePath);
     } catch {
       return res.status(404).json({ error: "Subtitle file not found" });
     }
@@ -538,7 +542,7 @@ export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & Lo
 
     if (ext === ".srt") {
       try {
-        const srtContent = fs.readFileSync(filePath, "utf-8");
+        const srtContent = await fsp.readFile(filePath, "utf-8");
         return res.send(srtToVtt(srtContent));
       } catch (err) {
         log("err", "SRT read failed for custom subtitle", { error: (err as Error).message });

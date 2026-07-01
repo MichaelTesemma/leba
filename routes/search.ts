@@ -4,6 +4,7 @@ import { fmtBytes, throttle } from "../lib/media/media-utils.js";
 import { searchTorrentio } from "../lib/torrent/torrentio.js";
 import type { ClientCtx, CacheCtx, LogCtx, SearchCtx, DebridCtx, Torrent } from "../lib/types.js";
 import type { SearchResult } from "../lib/search/types.js";
+import { preloadFirstPieces } from "../lib/media/preload.js";
 
 export default function searchRoutes(app: Express, ctx: ClientCtx & CacheCtx & LogCtx & SearchCtx & DebridCtx): void {
   const { log, DOWNLOAD_PATH, availabilityCache, AVAIL_TTL, searchRegistry, debrid } = ctx;
@@ -327,7 +328,9 @@ function respondWithTorrent(torrent: Torrent, season: number | undefined, episod
   }
 
   if (!videoFile) return null;
-  (torrent.files[videoFile.index] as { select(): void }).select();
+  const selectedFile = torrent.files[videoFile.index];
+  selectedFile.select();
+  preloadFirstPieces(selectedFile, torrent);
   return {
     infoHash: torrent.infoHash,
     fileIndex: videoFile.index,
@@ -401,30 +404,32 @@ app.post("/api/auto-play", async (req: Request, res: Response) => {
       }
     }
 
-    // Try debrid — loop through top candidates until one works
+    // Try debrid — race top candidates in parallel (Promise.any)
     const debridProv = debrid.getProvider();
     const debridOn = debridProv && debrid.getMode() === "on";
     if (debridOn) {
       const candidates = scored.slice(0, 5);
-      for (const candidate of candidates) {
-        const tags = parseTags(candidate.name);
-        const trackerParams = TRACKERS.map((t) => `&tr=${encodeURIComponent(t)}`).join("");
-        const magnet = `magnet:?xt=urn:btih:${candidate.infoHash}&dn=${encodeURIComponent(candidate.name)}${trackerParams}`;
-        try {
-          log("info", "Auto-play selected", { name: candidate.name, score: candidate.score, seeders: candidate.seeders });
+      const debridRace = Promise.any(
+        candidates.map(async (candidate) => {
+          const tags = parseTags(candidate.name);
+          const trackerParams = TRACKERS.map((t) => `&tr=${encodeURIComponent(t)}`).join("");
+          const magnet = `magnet:?xt=urn:btih:${candidate.infoHash}&dn=${encodeURIComponent(candidate.name)}${trackerParams}`;
           const stream = await debridProv.unrestrict(magnet, candidate.fileIdx);
           log("info", "Auto-play via debrid", { name: candidate.name, filename: stream.filename });
           const debridStreamKey = debrid.setActiveStream(candidate.infoHash, stream.url, stream.files);
-          return res.json({
+          return {
             infoHash: candidate.infoHash, fileIndex: stream.fileIndex, fileName: stream.filename,
             torrentName: candidate.name, totalSize: stream.filesize, tags, debridStreamKey,
-          } satisfies TorrentPlayResult);
-        } catch (err) {
-          log("warn", "Debrid failed for candidate, trying next", { name: candidate.name, error: (err as Error).message });
-        }
+          } satisfies TorrentPlayResult;
+        })
+      );
+      try {
+        const result = await debridRace;
+        return res.json(result);
+      } catch {
+        log("err", "Debrid failed for all candidates", {});
+        return res.status(502).json({ error: "debrid_failed" });
       }
-      log("err", "Debrid failed for all candidates", {});
-      return res.status(502).json({ error: "debrid_failed" });
     }
 
     const best = scored[0];

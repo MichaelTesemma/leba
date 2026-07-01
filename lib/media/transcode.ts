@@ -6,7 +6,7 @@ import type { Readable } from "stream";
 import type { Request, Response } from "express";
 import type { TranscodeArgs, ProbeResult, LiveTranscodeOpts, ActiveTranscode, LogFn } from "../types.js";
 
-const WATCHDOG_TIMEOUT = 120000;
+const WATCHDOG_TIMEOUT = 30000;
 
 /**
  * Build ffmpeg argument array for live transcode.
@@ -236,6 +236,7 @@ interface LiveTranscodeContext {
   activeTranscodes: Map<string, ActiveTranscode>;
   probeCache: Map<string, ProbeResult>;
   log: LogFn;
+  warmPool?: { acquire(): void; discard(): void };
 }
 
 /**
@@ -256,6 +257,9 @@ export function serveLiveTranscode(opts: LiveTranscodeOpts, req: Request, res: R
   });
 
   log("info", "Live transcode", { input: useStdin ? "pipe" : "disk", seekTo, doSeek: seekTo > 0 });
+
+  // Acquire (or start warming a replacement) from the warm pool
+  ctx.warmPool?.acquire();
 
   const ffmpeg = spawn("ffmpeg", args, {
     stdio: [useStdin ? "pipe" : "ignore", "pipe", "pipe"],
@@ -322,5 +326,6 @@ export function serveLiveTranscode(opts: LiveTranscodeOpts, req: Request, res: R
     clearWatchdog();
     if (torrentStream) torrentStream.destroy();
     ffmpeg.kill();
+    ctx.warmPool?.discard();
   });
 }

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import HeroSection from "../components/HeroSection";
 import ContentRow from "../components/ContentRow";
 import WatchHistoryRow from "../components/WatchHistoryRow";
-import { fetchTrending, fetchDiscover, fetchGenres, fetchContinueWatching, dismissWatchHistory, autoPlay, poster as posterUrl } from "../lib/api";
+import { fetchTrending, fetchDiscover, fetchGenres, fetchContinueWatching, dismissWatchHistory, autoPlay, fetchRecommendations, poster as posterUrl } from "../lib/api";
 import { useRemoteMode } from "../lib/PlayerContext";
 import "./Home.css";
 
@@ -146,11 +146,29 @@ export default function Home() {
         onRemove={(item) => dismissWatchHistory({ tmdbId: item.tmdbId, mediaType: item.mediaType, season: item.season, episode: item.episode })}
       />
       <ContentRows from={from} to={to} />
+      <RatePrompt />
+    </div>
+  );
+}
+
+function RatePrompt() {
+  const navigate = useNavigate();
+  return (
+    <div className="home-rate-prompt">
+      <div className="home-rate-prompt-content">
+        <h3>Rate Your Favorites</h3>
+        <p>Tell us what you love and get better recommendations.</p>
+        <button onClick={() => navigate("/rate")} className="home-rate-btn">
+          Rate Movies
+        </button>
+      </div>
     </div>
   );
 }
 
 const ContentRows = memo(function ContentRows({ from, to }: { from: string; to: string }) {
+  const fetchRecMoviesCb = useCallback(() => fetchRecommendations("movie"), []);
+  const fetchRecTVCb = useCallback(() => fetchRecommendations("tv"), []);
   const fetchTrendingCb = useCallback(() => fetchTrending(), []);
   const fetchNewReleases = useCallback(() => fetchDiscover("movie", "", 1, "popularity.desc", `&primary_release_date.gte=${from}&primary_release_date.lte=${to}`), [from, to]);
   const fetchPopularMovies = useCallback(() => fetchDiscover("movie", "", 1, "popularity.desc"), []);
@@ -164,6 +182,8 @@ const ContentRows = memo(function ContentRows({ from, to }: { from: string; to: 
 
   return (
     <div className="home-rows">
+      <ContentRow title="Recommended Movies" fetchFn={fetchRecMoviesCb} filterAvailability />
+      <ContentRow title="Recommended TV" fetchFn={fetchRecTVCb} filterAvailability />
       <ContentRow title="Trending This Week" fetchFn={fetchTrendingCb} filterAvailability />
       <ContentRow title="New Releases" fetchFn={fetchNewReleases} filterAvailability />
       <ContentRow title="Popular Movies" fetchFn={fetchPopularMovies} filterAvailability />
