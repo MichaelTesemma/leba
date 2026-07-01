@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from "express";
 import { tmdbCache, CACHE_TTL, fetchTMDB, startCacheJanitor } from "../lib/cache/cache.js";
 import { tmdbConfigured, saveTmdbKey, deleteTmdbKey } from "../lib/tmdb-config.js";
-import type { ServerContext } from "../lib/types.js";
+import type { LogCtx } from "../lib/types.js";
 
 interface RedditThread {
   id: string;
@@ -15,7 +15,7 @@ interface RedditThread {
   flair: string | null;
 }
 
-export default function tmdbRoutes(app: Express, ctx: ServerContext): void {
+export default function tmdbRoutes(app: Express, ctx: LogCtx): void {
   const { log } = ctx;
 
   const _cacheJanitorTmdb = startCacheJanitor(log);

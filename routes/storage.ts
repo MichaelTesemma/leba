@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
-import type { ServerContext } from "../lib/types.js";
+import type { StorageCtx } from "../lib/types.js";
 
-export default function storageRoutes(app: Express, ctx: ServerContext): void {
+export default function storageRoutes(app: Express, ctx: StorageCtx): void {
   const { watchHistory, savedList } = ctx;
 
   // Disable caching for all storage endpoints — data changes on every interaction

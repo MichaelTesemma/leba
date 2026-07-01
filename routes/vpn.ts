@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import type { Express, Request, Response } from "express";
-import type { ServerContext } from "../lib/types.js";
+import type { LogCtx } from "../lib/types.js";
 import { configDir } from "../lib/storage/paths.js";
 
 const CONFIG_DIR = configDir();
@@ -22,7 +22,7 @@ function readState(): VpnState {
   }
 }
 
-export default function vpnRoutes(app: Express, ctx: ServerContext): void {
+export default function vpnRoutes(app: Express, ctx: LogCtx): void {
   const { log } = ctx;
 
   // Current VPN status

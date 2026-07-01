@@ -2,10 +2,10 @@ import crypto from "crypto";
 import os from "os";
 import type { Express, Request, Response } from "express";
 import { buildCookie, clearCookie, getRcAuthToken, getRcSessionId } from "../lib/access-control.js";
-import type { ServerContext, RCSession, RCClient } from "../lib/types.js";
+import type { StorageCtx, LogCtx, RCSession, RCClient } from "../lib/types.js";
 import { dumpRcSessions } from "../lib/storage/rc-sessions.js";
 
-export default function rcRoutes(app: Express, ctx: ServerContext): void {
+export default function rcRoutes(app: Express, ctx: StorageCtx & LogCtx): void {
   const { log, pcAuthToken, rcSessions } = ctx;
 
   function authorizeSession(

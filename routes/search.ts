@@ -2,27 +2,11 @@ import type { Express, Request, Response } from "express";
 import { scoreTorrent, parseTags, findEpisodeFile as findEpisodeFileFromList, findLargestVideoFile, hasWrongEpisode, coversTargetSeason } from "../lib/torrent/torrent-scoring.js";
 import { fmtBytes, throttle } from "../lib/media/media-utils.js";
 import { searchTorrentio } from "../lib/torrent/torrentio.js";
-import { getDebridProvider, setActiveDebridStream, getDebridMode } from "../lib/torrent/debrid.js";
-import type { ServerContext, Torrent } from "../lib/types.js";
+import type { ClientCtx, CacheCtx, LogCtx, SearchCtx, DebridCtx, Torrent } from "../lib/types.js";
+import type { SearchResult } from "../lib/search/types.js";
 
-interface SearchResult {
-  name: string;
-  infoHash: string;
-  size: number;
-  seeders: number;
-  leechers: number;
-  source: string;
-  seasonPack?: boolean;
-  fileIdx?: number;
-  languages?: string[];
-  hasSubs?: boolean;
-  subLanguages?: string[];
-  multiAudio?: boolean;
-  foreignOnly?: boolean;
-}
-
-export default function searchRoutes(app: Express, ctx: ServerContext): void {
-  const { log, DOWNLOAD_PATH, availabilityCache, AVAIL_TTL } = ctx;
+export default function searchRoutes(app: Express, ctx: ClientCtx & CacheCtx & LogCtx & SearchCtx & DebridCtx): void {
+  const { log, DOWNLOAD_PATH, availabilityCache, AVAIL_TTL, searchRegistry, debrid } = ctx;
   // Access ctx.client via getter (not destructured) so deferred init is visible
   const client = () => ctx.client;
 
@@ -37,569 +21,10 @@ const TRACKERS = [
   "udp://open.demonii.com:1337/announce",
 ];
 
-async function searchTPB(query: string): Promise<SearchResult[]> {
-  const url = `https://apibay.org/q.php?q=${encodeURIComponent(query)}`;
-  const resp = await fetch(url, {
-    headers: { "User-Agent": "Leba/2.0" },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!resp.ok) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any = await resp.json();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (Array.isArray(data) ? data : [])
-    .filter((r: any) => r.id !== "0" && r.name !== "No results returned")
-    .map((r: any) => ({
-      name: r.name,
-      infoHash: (r.info_hash || "").toLowerCase(),
-      size: parseInt(r.size, 10) || 0,
-      seeders: parseInt(r.seeders, 10) || 0,
-      leechers: parseInt(r.leechers, 10) || 0,
-      source: "tpb",
-    }));
-}
-
-async function searchEZTV(query: string, imdbId: string | undefined): Promise<SearchResult[]> {
-  if (!imdbId) return [];
-  // EZTV API requires IMDB ID (numeric part only)
-  const numericId = imdbId.replace(/\D/g, "");
-  if (!numericId) return [];
-  try {
-    const results: SearchResult[] = [];
-    // Fetch up to 3 pages to get good coverage
-    for (let page = 1; page <= 3; page++) {
-      const url = `https://eztvx.to/api/get-torrents?imdb_id=${numericId}&limit=100&page=${page}`;
-      const resp = await fetch(url, {
-        headers: { "User-Agent": "Leba/2.0" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!resp.ok) break;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data: any = await resp.json();
-      if (!data.torrents || data.torrents.length === 0) break;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const t of data.torrents as any[]) {
-        results.push({
-          name: t.title || t.filename,
-          infoHash: (t.hash || "").toLowerCase(),
-          size: parseInt(t.size_bytes, 10) || 0,
-          seeders: parseInt(t.seeds, 10) || 0,
-          leechers: parseInt(t.peers, 10) || 0,
-          source: "eztv",
-        });
-      }
-      if (data.torrents.length < 100) break;
-    }
-    // Filter by query terms (to match specific episode)
-    const terms = query.toLowerCase().split(/\s+/);
-    return results.filter((r) => {
-      const name = r.name.toLowerCase();
-      return terms.every((term) => name.includes(term));
-    });
-  } catch {
-    return [];
-  }
-}
-
-async function searchYTS(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://yts.mx/api/v2/list_movies.json?query_term=${encodeURIComponent(query)}&limit=20&sort_by=seeds`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Leba/2.0" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!resp.ok) return [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const data: any = await resp.json();
-    if (!data.data?.movies) return [];
-    const results: SearchResult[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const movie of data.data.movies as any[]) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const torrent of (movie.torrents || []) as any[]) {
-        results.push({
-          name: `${movie.title_long} ${torrent.quality} ${torrent.type}`.trim(),
-          infoHash: (torrent.hash || "").toLowerCase(),
-          size: parseInt(torrent.size_bytes, 10) || 0,
-          seeders: parseInt(torrent.seeds, 10) || 0,
-          leechers: parseInt(torrent.peers, 10) || 0,
-          source: "yts",
-        });
-      }
-    }
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── 1337x ───────────────────────────────────────────────────────
-async function search1337x(query: string): Promise<SearchResult[]> {
-  try {
-    // 1337x has a search page — scrape torrent names and magnet links
-    const url = `https://1337x.to/search/${encodeURIComponent(query)}/1/`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // Extract torrent rows
-    const rowMatches = html.match(/<td class="coll-1 name".*?<\/td>.*?<\/tr>/gs) || [];
-    for (const row of rowMatches.slice(0, 30)) {
-      // Name
-      const nameMatch = row.match(/>([^<]+)<\/a>\s*<\/td>/);
-      if (!nameMatch) continue;
-      const name = nameMatch[1].replace(/<[^>]+>/g, "").trim();
-      if (name.length < 3) continue;
-
-      // Magnet/hash from link
-      const linkMatch = row.match(/href="\/torrent\/(\d+)\//);
-      if (!linkMatch) continue;
-
-      // Seeders
-      const seedMatch = row.match(/<td class="[\s\w]*seeds">(\d+)<\/td>/);
-      const seeders = seedMatch ? parseInt(seedMatch[1], 10) : 0;
-
-      // Leechers
-      const leechMatch = row.match(/<td class="[\s\w]*leeches">(\d+)<\/td>/);
-      const leechers = leechMatch ? parseInt(leechMatch[1], 10) : 0;
-
-      // Size
-      const sizeMatch = row.match(/([\d.]+\s*(?:TB|GB|MB))/i);
-      const size = sizeMatch ? parseSize(sizeMatch[1]) : 0;
-
-      // We can't get the hash from search page — need to visit torrent page
-      // For now, use the URL as a unique ID and let downstream dedup handle it
-      results.push({
-        name,
-        infoHash: `1337x:${linkMatch[1]}`, // Temporary — real hash fetched below
-        size,
-        seeders,
-        leechers,
-        source: "1337x",
-      });
-    }
-
-    // Fetch real hashes for top results (batch)
-    await Promise.all(results.slice(0, 15).map(async (r) => {
-      try {
-        const id = r.infoHash.split(":")[1];
-        const detailUrl = `https://1337x.to/torrent/${id}/x/`;
-        const detailResp = await fetch(detailUrl, {
-          headers: { "User-Agent": "Mozilla/5.0" },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!detailResp.ok) return;
-        const detailHtml = await detailResp.text();
-        const hashMatch = detailHtml.match(/([a-f0-9]{40})/);
-        if (hashMatch) r.infoHash = hashMatch[1].toLowerCase();
-      } catch { /* skip */ }
-    }));
-
-    return results.filter((r) => r.infoHash.length === 40);
-  } catch {
-    return [];
-  }
-}
-
-// ── TorrentGalaxy ───────────────────────────────────────────────
-async function searchTorrentGalaxy(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://torrentgalaxy.to/torrents.php?search=${encodeURIComponent(query)}&nox=2`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // TorrentGalaxy embeds JSON in the page
-    const jsonMatch = html.match(/var results\s*=\s*(\[.*?\]);/s);
-    if (jsonMatch) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const data: any[] = JSON.parse(jsonMatch[1]);
-        for (const item of data.slice(0, 30)) {
-          const hash = (item.hash || "").toLowerCase();
-          if (!hash || hash.length !== 40) continue;
-          results.push({
-            name: item.name || item.title || "",
-            infoHash: hash,
-            size: parseSize(item.size || ""),
-            seeders: parseInt(item.seeders, 10) || 0,
-            leechers: parseInt(item.leechers, 10) || 0,
-            source: "tgx",
-          });
-        }
-      } catch { /* fallback to HTML parsing */ }
-    }
-
-    // Fallback: parse HTML table
-    if (results.length === 0) {
-      const rowRegex = /<a href="\/torrent\/(\d+)\//g;
-      let match;
-      while ((match = rowRegex.exec(html)) !== null && results.length < 30) {
-        const id = match[1];
-        // Get surrounding context
-        const start = Math.max(0, match.index - 200);
-        const end = Math.min(html.length, match.index + 500);
-        const chunk = html.slice(start, end);
-
-        const nameMatch = chunk.match(/title="([^"]{10,})"/);
-        const seedMatch = chunk.match(/title="Seeders[^"]*">\s*([\d,]+)/);
-        const sizeMatch = chunk.match(/([\d.]+\s*(?:TB|GB|MB))/i);
-        const hashMatch = chunk.match(/([a-f0-9]{40})/i);
-
-        if (nameMatch) {
-          results.push({
-            name: nameMatch[1].trim(),
-            infoHash: hashMatch?.[1]?.toLowerCase() || `tgx:${id}`,
-            size: sizeMatch ? parseSize(sizeMatch[1]) : 0,
-            seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
-            leechers: 0,
-            source: "tgx",
-          });
-        }
-      }
-    }
-
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── BTDigg (DHT search engine) ─────────────────────────────────
-async function searchBTDigg(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://btdig.com/search?q=${encodeURIComponent(query)}&p=0&order=0`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // BTDigg has a very regular structure
-    const divRegex = /<div class="one_result">(.*?)<\/div>\s*<div class="clear"><\/div>/gs;
-    let divMatch;
-    while ((divMatch = divRegex.exec(html)) !== null && results.length < 20) {
-      const block = divMatch[1];
-
-      const nameMatch = block.match(/<a[^>]+class="torrent_name"[^>]*>(.*?)<\/a>/);
-      if (!nameMatch) continue;
-      const name = nameMatch[1].replace(/<[^>]+>/g, "").trim();
-
-      const hashMatch = block.match(/urn:btih:([a-f0-9]{40})/i);
-      const infoHash = hashMatch ? hashMatch[1].toLowerCase() : "";
-
-      const sizeMatch = block.match(/Torrent size: ([\d.]+)\s*(TB|GB|MB|KB)/i);
-      const size = sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0;
-
-      results.push({
-        name,
-        infoHash,
-        size,
-        seeders: 0, // BTDigg doesn't expose seeders
-        leechers: 0,
-        source: "btdigg",
-      });
-    }
-
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── Bitsearch ──────────────────────────────────────────────────
-async function searchBitsearch(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://bitsearch.to/search?q=${encodeURIComponent(query)}`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // Bitsearch renders results in a structured list
-    const itemRegex = /<a href="\/torrent\/([^"]+)"[^>]*>(.*?)<\/a>/gs;
-    let itemMatch;
-    while ((itemMatch = itemRegex.exec(html)) !== null && results.length < 20) {
-      const id = itemMatch[1];
-      const htmlContent = itemMatch[2];
-      const nameMatch = htmlContent.match(/title="([^"]{5,})"/);
-      if (!nameMatch) continue;
-
-      // Get size from nearby context
-      const start = Math.max(0, itemMatch.index - 100);
-      const context = html.slice(start, itemMatch.index + 300);
-      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB)/i);
-      const seedMatch = context.match(/seeders[^>]*>\s*([\d,]+)/i);
-
-      results.push({
-        name: nameMatch[1].trim(),
-        infoHash: id.length === 40 ? id.toLowerCase() : `bitsearch:${id}`,
-        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
-        seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
-        leechers: 0,
-        source: "bitsearch",
-      });
-    }
-
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── BT4G ──────────────────────────────────────────────────────
-async function searchBT4G(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://bt4g.org/search/${encodeURIComponent(query)}/1`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // BT4G has clean result cards
-    const detailRegex = /<a href="\/torrent\/([a-f0-9]{40})"[^>]*title="([^"]{5,})"/gi;
-    let match;
-    while ((match = detailRegex.exec(html)) !== null && results.length < 20) {
-      const infoHash = match[1].toLowerCase();
-      const name = match[2].trim();
-
-      // Size from nearby text
-      const start = Math.max(0, match.index - 50);
-      const context = html.slice(start, match.index + 400);
-      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB|KB)/i);
-
-      results.push({
-        name,
-        infoHash,
-        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
-        seeders: 0,
-        leechers: 0,
-        source: "bt4g",
-      });
-    }
-
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── LimeTorrents ──────────────────────────────────────────────
-async function searchLimeTorrents(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://www.limetorrents.lol/search/all/${encodeURIComponent(query)}`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // LimeTorrents has a regular table structure
-    const rowRegex = /<tr>.*?<td class="tdleft".*?<a[^>]+href="([^"]+)"[^>]*title="([^"]{5,})"[^>]*>.*?<\/tr>/gs;
-    let rowMatch;
-    while ((rowMatch = rowRegex.exec(html)) !== null && results.length < 20) {
-      const link = rowMatch[1];
-      const name = rowMatch[2].trim();
-
-      // Extract hash from URL
-      const hashMatch = link.match(/\/([a-f0-9]{40})\.html/i);
-      const infoHash = hashMatch ? hashMatch[1].toLowerCase() : "";
-      if (!infoHash) continue;
-
-      // Size from nearby context
-      const context = rowMatch[0];
-      const sizeMatch = context.match(/([\d.]+)\s*(TB|GB|MB|KB)/i);
-      const seedMatch = context.match(/seeders[^>]*>\s*([\d,]+)/i);
-
-      results.push({
-        name,
-        infoHash,
-        size: sizeMatch ? parseSize(`${sizeMatch[1]} ${sizeMatch[2]}`) : 0,
-        seeders: seedMatch ? parseInt(seedMatch[1].replace(/,/g, ""), 10) : 0,
-        leechers: 0,
-        source: "lime",
-      });
-    }
-
-    return results;
-  } catch {
-    return [];
-  }
-}
-
-// ── Nyaa (Anime only) ─────────────────────────────────────────
-async function searchNyaa(query: string): Promise<SearchResult[]> {
-  try {
-    const url = `https://nyaa.si/?f=0&c=0_0&q=${encodeURIComponent(query)}&p=0&s=seeders&o=desc`;
-    const resp = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)" },
-      signal: AbortSignal.timeout(12000),
-    });
-    if (!resp.ok) return [];
-    const html = await resp.text();
-
-    const results: SearchResult[] = [];
-
-    // Nyaa has a clean table
-    const rowRegex = /<tr[^>]*>\s*<td[^>]*>(\d+)<\/td>.*?<a href="\/view\/(\d+)"[^>]*title="([^"]{5,})"[^>]*>.*?<\/tr>/gs;
-    let rowMatch;
-    while ((rowMatch = rowRegex.exec(html)) !== null && results.length < 20) {
-      const seeders = parseInt(rowMatch[1], 10) || 0;
-      const name = rowMatch[3].trim();
-
-      // Get size from nearby context
-      const context = rowMatch[0];
-      const sizeMatch = context.match(/([\d.]+)\s*(TiB|GiB|MiB|KiB)/i);
-
-      results.push({
-        name,
-        infoHash: `nyaa:${rowMatch[2]}`,
-        size: sizeMatch ? parseSize(sizeMatch[1] + sizeMatch[2].toLowerCase().replace("i", "")) : 0,
-        seeders,
-        leechers: 0,
-        source: "nyaa",
-      });
-    }
-
-    // Fetch real hashes for nyaa entries (batch)
-    await Promise.all(results.slice(0, 15).map(async (r) => {
-      try {
-        const id = r.infoHash.split(":")[1];
-        const detailUrl = `https://nyaa.si/view/${id}`;
-        const detailResp = await fetch(detailUrl, {
-          headers: { "User-Agent": "Mozilla/5.0" },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!detailResp.ok) return;
-        const detailHtml = await detailResp.text();
-        const hashMatch = detailHtml.match(/([a-f0-9]{40})/);
-        if (hashMatch) r.infoHash = hashMatch[1].toLowerCase();
-      } catch { /* skip */ }
-    }));
-
-    return results.filter((r) => r.infoHash.length === 40 || r.infoHash.startsWith("nyaa:"));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Parse a human-readable size string like "1.5 GB" into bytes.
- */
-function parseSize(str: string): number {
-  const match = str.trim().match(/^([\d.]+)\s*(TB|GB|MB|KB)$/i);
-  if (!match) return 0;
-  const num = parseFloat(match[1]);
-  const unit = match[2].toUpperCase();
-  const multipliers: Record<string, number> = { TB: 1099511627776, GB: 1073741824, MB: 1048576, KB: 1024 };
-  return Math.round(num * (multipliers[unit] || 1));
-}
-
-/**
- * Wrap a promise with a timeout that returns [] on timeout instead of rejecting.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve) => {
-    const timer = setTimeout(() => {
-      log("warn", "Provider timed out", { provider: label, ms });
-      resolve([] as unknown as T);
-    }, ms);
-    promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      () => { clearTimeout(timer); resolve([] as unknown as T); },
-    );
-  });
-}
-
 async function searchTorrents(query: string, imdbId?: string): Promise<SearchResult[]> {
-  // Tier 1: Fast JSON APIs (3s timeout)
-  const tier1 = [
-    searchTPB(query),
-    searchYTS(query),
-    ...(imdbId ? [searchEZTV(query, imdbId)] : []),
-  ].map((p, i) => {
-    const names = ["tpb", "yts", "eztv"];
-    return withTimeout(p, 3000, names[i]);
-  });
-
-  // Tier 2: Structured HTML sites (5s timeout)
-  const tier2 = [
-    searchTorrentGalaxy(query),
-    searchBitsearch(query),
-    searchBT4G(query),
-    search1337x(query),
-  ].map((p, i) => {
-    const names = ["tgx", "bitsearch", "bt4g", "1337x"];
-    return withTimeout(p, 5000, names[i]);
-  });
-
-  // Tier 3: DHT indexers and niche sites (7s timeout) — run in background
-  const tier3 = [
-    searchBTDigg(query),
-    searchLimeTorrents(query),
-    searchNyaa(query),
-  ].map((p, i) => {
-    const names = ["btdigg", "lime", "nyaa"];
-    return withTimeout(p, 7000, names[i]);
-  });
-
-  // Wait for all tiers in parallel — slowest takes 7s max (not 12s × 10)
-  const [r1, r2, r3] = await Promise.all([
-    Promise.allSettled(tier1),
-    Promise.allSettled(tier2),
-    Promise.allSettled(tier3),
-  ]);
-
-  const all: SearchResult[] = [
-    ...r1.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
-    ...r2.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
-    ...r3.filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled").flatMap((r) => r.value),
-  ];
-
-  // Dedupe by infoHash, keep the one with more seeders
-  const seen = new Map<string, SearchResult>();
-  for (const r of all) {
-    if (!r.infoHash) continue;
-    const existing = seen.get(r.infoHash);
-    if (!existing || r.seeders > existing.seeders) {
-      seen.set(r.infoHash, r);
-    }
-  }
-
-  const merged = [...seen.values()];
-  log("info", "Multi-provider search", {
-    query,
-    tier1_ms: 3000,
-    tier2_ms: 5000,
-    tier3_ms: 7000,
-    merged: merged.length,
-  });
-
-  return merged;
+  const results = await searchRegistry.searchAll(query, imdbId, log);
+  log("info", "Multi-provider search", { query, merged: results.length });
+  return results;
 }
 
 
@@ -788,11 +213,11 @@ app.post("/api/search-streams", async (req: Request, res: Response) => {
     const final = scored.slice(0, 50);
 
     // Check debrid cache availability if configured
-    const debrid = getDebridProvider();
-    if (debrid && final.length > 0) {
+    const debridProv = debrid.getProvider();
+    if (debridProv && final.length > 0) {
       try {
         const hashes = final.map((r) => r.infoHash);
-        const cached = await debrid.checkCached(hashes);
+        const cached = await debridProv.checkCached(hashes);
         for (const r of final) {
           if (cached.get(r.infoHash.toLowerCase())) {
             (r as typeof r & { cached?: boolean }).cached = true;
@@ -977,8 +402,8 @@ app.post("/api/auto-play", async (req: Request, res: Response) => {
     }
 
     // Try debrid — loop through top candidates until one works
-    const debrid = getDebridProvider();
-    const debridOn = debrid && getDebridMode() === "on";
+    const debridProv = debrid.getProvider();
+    const debridOn = debridProv && debrid.getMode() === "on";
     if (debridOn) {
       const candidates = scored.slice(0, 5);
       for (const candidate of candidates) {
@@ -987,9 +412,9 @@ app.post("/api/auto-play", async (req: Request, res: Response) => {
         const magnet = `magnet:?xt=urn:btih:${candidate.infoHash}&dn=${encodeURIComponent(candidate.name)}${trackerParams}`;
         try {
           log("info", "Auto-play selected", { name: candidate.name, score: candidate.score, seeders: candidate.seeders });
-          const stream = await debrid.unrestrict(magnet, candidate.fileIdx);
+          const stream = await debridProv.unrestrict(magnet, candidate.fileIdx);
           log("info", "Auto-play via debrid", { name: candidate.name, filename: stream.filename });
-          const debridStreamKey = setActiveDebridStream(candidate.infoHash, stream.url, stream.files);
+          const debridStreamKey = debrid.setActiveStream(candidate.infoHash, stream.url, stream.files);
           return res.json({
             infoHash: candidate.infoHash, fileIndex: stream.fileIndex, fileName: stream.filename,
             torrentName: candidate.name, totalSize: stream.filesize, tags, debridStreamKey,
@@ -1107,13 +532,13 @@ app.post("/api/play-torrent", async (req: Request, res: Response) => {
   const magnet = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name || "")}${trackerParams}`;
 
   // Try debrid if enabled — no WebTorrent fallback
-  const debrid = getDebridProvider();
-  const debridOn = debrid && getDebridMode() === "on";
+  const debridProv = debrid.getProvider();
+  const debridOn = debridProv && debrid.getMode() === "on";
   if (debridOn) {
     try {
-      const stream = await debrid.unrestrict(magnet, fileIdx);
+      const stream = await debridProv.unrestrict(magnet, fileIdx);
       log("info", "Play-torrent via debrid", { infoHash, filename: stream.filename });
-      const debridStreamKey = setActiveDebridStream(infoHash, stream.url, stream.files);
+      const debridStreamKey = debrid.setActiveStream(infoHash, stream.url, stream.files);
       return res.json({
         infoHash,
         fileIndex: stream.fileIndex,

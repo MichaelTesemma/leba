@@ -39,9 +39,11 @@ import openUrlRoutes from "./routes/open-url.js";
 import storageRoutes from "./routes/storage.js";
 import updateRoutes from "./routes/update.js";
 import { sweepOldFiles, evictIfLowSpace } from "./lib/cache/cache-cleanup.js";
-import type { ServerContext, TorrentClient, IdleTracker, RCSession } from "./lib/types.js";
-import type { WatchHistory } from "./lib/storage/watch-history.js";
-import type { SavedList } from "./lib/storage/saved-list.js";
+import type {
+  ServerContext, TorrentClient, IdleTracker, RCSession,
+  CompletedFile, StreamEntry, ActiveTranscode,
+  AvailEntry, IntroEntry, ProbeResult, SeekEntry,
+} from "./lib/types.js";
 
 interface CreateAppOverrides {
   __dirname?: string;
@@ -50,20 +52,20 @@ interface CreateAppOverrides {
 
 interface AppContext {
   app: ReturnType<typeof express>;
-  client: ServerContext["client"];
-  durationCache: ServerContext["durationCache"];
-  seekIndexCache: ServerContext["seekIndexCache"];
-  seekIndexPending: ServerContext["seekIndexPending"];
-  activeFiles: ServerContext["activeFiles"];
-  completedFiles: ServerContext["completedFiles"];
-  streamTracker: ServerContext["streamTracker"];
-  activeTranscodes: ServerContext["activeTranscodes"];
-  availabilityCache: ServerContext["availabilityCache"];
-  probeCache: ServerContext["probeCache"];
-  introCache: ServerContext["introCache"];
-  rcSessions: ServerContext["rcSessions"];
-  watchHistory: WatchHistory;
-  savedList: SavedList;
+  client: TorrentClient;
+  durationCache: Map<string, number>;
+  seekIndexCache: Map<string, SeekEntry[]>;
+  seekIndexPending: Set<string>;
+  activeFiles: Map<string, Set<number>>;
+  completedFiles: Map<string, CompletedFile>;
+  streamTracker: Map<string, StreamEntry>;
+  activeTranscodes: Map<string, ActiveTranscode>;
+  availabilityCache: Map<string, AvailEntry>;
+  probeCache: Map<string, ProbeResult>;
+  introCache: Map<string, IntroEntry>;
+  rcSessions: Map<string, RCSession>;
+  watchHistory: ServerContext["watchHistory"];
+  savedList: ServerContext["savedList"];
   idleTracker: IdleTracker;
   pcAuthToken: string;
 }

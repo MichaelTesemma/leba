@@ -1,8 +1,8 @@
 import { execFile } from "child_process";
 import type { Express, Request, Response } from "express";
-import type { ServerContext } from "../lib/types.js";
+import type { LogCtx } from "../lib/types.js";
 
-export default function openUrlRoutes(app: Express, ctx: ServerContext): void {
+export default function openUrlRoutes(app: Express, ctx: LogCtx): void {
   app.post("/api/open-url", (req: Request, res: Response) => {
     const { url } = req.body as { url?: string };
 

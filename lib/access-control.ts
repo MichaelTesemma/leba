@@ -1,5 +1,5 @@
 import type { Request, RequestHandler } from "express";
-import type { RCSession, ServerContext } from "./types.js";
+import type { RCSession, StorageCtx } from "./types.js";
 
 type CookieMap = Record<string, string>;
 
@@ -140,7 +140,7 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   return ALLOWED_ORIGINS.includes(origin);
 }
 
-export function createApiAccessControl(ctx: ServerContext): RequestHandler {
+export function createApiAccessControl(ctx: StorageCtx): RequestHandler {
   return (req, res, next) => {
     // Add CORS headers — restricted to trusted local origins only
     const origin = req.headers.origin;

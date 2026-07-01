@@ -172,32 +172,28 @@ export function serveFile(filePath: string, fileSize: number, contentType: strin
 }
 
 /**
- * Track active readers per file to keep the torrent selected while streaming.
- */
-const _activeReaders = new Map<object, number>();
-
-/**
  * Stream from WebTorrent (still downloading, native format).
  * Keeps the file selected while readers are active, preventing
  * race conditions and download stalls during playback.
+ * @param activeReaders — shared map owned by the server context, tracks reader count per file.
  */
-export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: Response): void {
+export function serveFromTorrent(file: TorrentFileForServe, req: Request, res: Response, activeReaders: Map<object, number>): void {
   const range = req.headers.range;
   const size = file.length;
 
   // Ensure file is selected for downloading pieces
   file.select();
-  const readerCount = _activeReaders.get(file) || 0;
-  _activeReaders.set(file, readerCount + 1);
+  const readerCount = activeReaders.get(file) || 0;
+  activeReaders.set(file, readerCount + 1);
 
   // Decrement on close — deselect only when all readers are gone
   const onEnd = () => {
-    const count = _activeReaders.get(file) || 0;
+    const count = activeReaders.get(file) || 0;
     if (count <= 1) {
-      _activeReaders.delete(file);
+      activeReaders.delete(file);
       // Keep file selected — let WebTorrent's natural piece selection handle it
     } else {
-      _activeReaders.set(file, count - 1);
+      activeReaders.set(file, count - 1);
     }
   };
 

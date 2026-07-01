@@ -8,10 +8,9 @@ import { getFileOffset } from "../lib/torrent/torrent-compat.js";
 import { hasPiece } from "../lib/torrent/torrent-compat.js";
 import { VIDEO_EXTENSIONS, SUBTITLE_EXTENSIONS, srtToVtt } from "../lib/media/media-utils.js";
 import { detectIntro, lookupExternal } from "../lib/media/intro-detect.js";
-import type { ServerContext, Torrent } from "../lib/types.js";
-import { getActiveDebridUrl } from "../lib/torrent/debrid.js";
+import type { ClientCtx, CacheCtx, LogCtx, DebridCtx, Torrent } from "../lib/types.js";
 
-export default function mediaRoutes(app: Express, ctx: ServerContext): void {
+export default function mediaRoutes(app: Express, ctx: ClientCtx & CacheCtx & LogCtx & DebridCtx): void {
   const {
     log, diskPath, isFileComplete, DOWNLOAD_PATH,
     durationCache, introCache,
@@ -48,7 +47,7 @@ export default function mediaRoutes(app: Express, ctx: ServerContext): void {
         return res.json({ duration: null });
       }
     } else {
-      const debridUrl = getActiveDebridUrl(infoHash, parseInt(fileIndex, 10));
+      const debridUrl = ctx.debrid.getActiveUrl(infoHash);
       if (!debridUrl) return res.status(404).json({ error: "Torrent not found" });
       filePath = debridUrl;
     }
@@ -203,7 +202,7 @@ export default function mediaRoutes(app: Express, ctx: ServerContext): void {
       }
     } else {
       // Debrid fallback: probe the remote URL directly (ffprobe supports HTTPS)
-      const debridUrl = getActiveDebridUrl(infoHash, parseInt(fileIndex, 10));
+      const debridUrl = ctx.debrid.getActiveUrl(infoHash);
       if (!debridUrl) return res.status(404).json({ error: "Torrent not found" });
       filePath = debridUrl;
       complete = true;
@@ -255,7 +254,7 @@ export default function mediaRoutes(app: Express, ctx: ServerContext): void {
         return res.json({ tracks: [], complete: false });
       }
     } else {
-      const debridUrl = getActiveDebridUrl(infoHash, parseInt(fileIndex, 10));
+      const debridUrl = ctx.debrid.getActiveUrl(infoHash);
       if (!debridUrl) return res.status(404).json({ error: "Torrent not found" });
       filePath = debridUrl;
       complete = true;
@@ -420,7 +419,7 @@ export default function mediaRoutes(app: Express, ctx: ServerContext): void {
         return res.status(202).json({ error: "File not on disk yet" });
       }
     } else {
-      const debridUrl = getActiveDebridUrl(params.infoHash, parseInt(params.fileIndex, 10));
+      const debridUrl = ctx.debrid.getActiveUrl(params.infoHash);
       if (!debridUrl) return res.status(404).json({ error: "Torrent not found" });
       filePath = debridUrl;
     }

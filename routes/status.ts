@@ -5,12 +5,11 @@ import {
   VIDEO_EXTENSIONS, AUDIO_EXTENSIONS, SUBTITLE_EXTENSIONS,
   isAllowedFile,
 } from "../lib/media/media-utils.js";
-import type { ServerContext, Torrent } from "../lib/types.js";
-import { getActiveDebridFiles } from "../lib/torrent/debrid.js";
+import type { ClientCtx, CacheCtx, LogCtx, DebridCtx, Torrent } from "../lib/types.js";
 
-export default function statusRoutes(app: Express, ctx: ServerContext): void {
+export default function statusRoutes(app: Express, ctx: ClientCtx & CacheCtx & LogCtx & DebridCtx): void {
   const {
-    log, diskPath,
+    log, diskPath, debrid,
     durationCache, completedFiles,
   } = ctx;
   // Access ctx.client via getter (not destructured) so deferred init is visible
@@ -65,7 +64,7 @@ export default function statusRoutes(app: Express, ctx: ServerContext): void {
         });
       }
       // Debrid fallback: return file list from RD torrent info
-      const debridFiles = getActiveDebridFiles(infoHash);
+      const debridFiles = debrid.getActiveFiles(infoHash);
       if (debridFiles.length > 0) {
         const files = debridFiles.map((f, i) => {
           const ext = path.extname(f.path).toLowerCase();

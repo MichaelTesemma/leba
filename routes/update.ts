@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import type { ServerContext } from "../lib/types.js";
+import type { LogCtx } from "../lib/types.js";
 import { readFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
 import path from "path";
@@ -32,8 +32,6 @@ interface UpdateInfo {
   }>;
 }
 
-// Cache the result for 1 hour to avoid hammering GitHub API
-let cached: { data: UpdateInfo; ts: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000;
 
 function parseVersion(tag: string): number[] {
@@ -58,8 +56,9 @@ const _pkgPath = existsSync(path.join(_updateDir, "package.json"))
   : path.join(_updateDir, "..", "package.json");
 const CURRENT_VERSION = JSON.parse(readFileSync(_pkgPath, "utf8")).version as string;
 
-export default function updateRoutes(app: Express, ctx: ServerContext): void {
+export default function updateRoutes(app: Express, ctx: LogCtx): void {
   const { log } = ctx;
+  let cached: { data: UpdateInfo; ts: number } | null = null;
 
   app.get("/api/update/check", async (_req: Request, res: Response) => {
     const current = CURRENT_VERSION;

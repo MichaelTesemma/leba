@@ -3,18 +3,15 @@ import { statSync } from "fs";
 import { Agent as HttpAgent, Agent as HttpsAgent, request as httpRequest } from "http";
 import type { IncomingMessage } from "http";
 import type { Express, Request, Response } from "express";
-import { getActiveDebridStreamByKey } from "../lib/torrent/debrid.js";
 import { jobKey } from "../lib/cache/torrent-caches.js";
 import { isAllowedFile } from "../lib/media/media-utils.js";
 import {
   probeMedia as _probeMedia, serveFile, serveFromTorrent,
   serveLiveTranscode as _serveLiveTranscode,
 } from "../lib/media/transcode.js";
-import type { ServerContext, Torrent, TorrentFile } from "../lib/types.js";
+import type { ClientCtx, CacheCtx, StreamTrackingCtx, LogCtx, DebridCtx, Torrent, TorrentFile } from "../lib/types.js";
 
-// Shared HTTP agents with keep-alive for upstream connections
-const httpAgent = new HttpAgent({ keepAlive: true, maxSockets: 10 });
-const httpsAgent = new HttpsAgent({ keepAlive: true, maxSockets: 10 });
+
 
 /**
  * Preload the first ~2 MB of a torrent file to speed up time-to-first-frame.
@@ -60,10 +57,13 @@ function isSafeProxyUrl(rawUrl: string): boolean {
   }
 }
 
-export default function streamRoutes(app: Express, ctx: ServerContext): void {
+export default function streamRoutes(app: Express, ctx: ClientCtx & CacheCtx & StreamTrackingCtx & LogCtx & DebridCtx): void {
+  const httpAgent = new HttpAgent({ keepAlive: true, maxSockets: 10 });
+  const httpsAgent = new HttpsAgent({ keepAlive: true, maxSockets: 10 });
+
   const {
-    log, diskPath, isFileComplete, streamTracking,
-    durationCache,
+    log, diskPath, isFileComplete, streamTracking, debrid,
+    durationCache, activeReaders,
     completedFiles, activeTranscodes, probeCache,
   } = ctx;
   // Access ctx.client via getter (not destructured) so deferred init is visible
@@ -165,7 +165,7 @@ export default function streamRoutes(app: Express, ctx: ServerContext): void {
     // Still downloading — preload first pieces then stream via WebTorrent
     log("info", "Streaming via WebTorrent", { file: file.name });
     preloadFirstPieces(file, torrent);
-    serveFromTorrent(file, req, res);
+    serveFromTorrent(file, req, res, activeReaders);
   });
 
   // ── Debrid stream proxy ──────────────────────────────────────────
@@ -174,7 +174,7 @@ export default function streamRoutes(app: Express, ctx: ServerContext): void {
     const streamKey = req.query.streamKey as string;
     if (!streamKey) return res.status(400).json({ error: "streamKey required" });
 
-    const activeStream = getActiveDebridStreamByKey(streamKey);
+    const activeStream = debrid.getActiveStreamByKey(streamKey);
     if (!activeStream) return res.status(404).json({ error: "stream not found" });
 
     const { url } = activeStream;

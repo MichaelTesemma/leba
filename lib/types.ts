@@ -258,12 +258,18 @@ export interface IdleTracker {
   middleware(req: Request, res: Response, next: NextFunction): void;
 }
 
-// ── Server Context ────────────────────────────────────────────────────
+// ── Server Context Slices ─────────────────────────────────────────────
+// Focused interfaces — routes receive only the slices they need.
 
-export interface ServerContext {
+export interface ClientCtx {
   client: TorrentClient;
   DOWNLOAD_PATH: string;
   TRANSCODE_PATH: string;
+  diskPath(torrent: Torrent, file: TorrentFile): string;
+  isFileComplete(torrent: Torrent, file: TorrentFile): boolean;
+}
+
+export interface CacheCtx {
   durationCache: Map<string, number>;
   seekIndexCache: Map<string, SeekEntry[]>;
   seekIndexPending: Set<string>;
@@ -275,15 +281,37 @@ export interface ServerContext {
   AVAIL_TTL: number;
   introCache: Map<string, IntroEntry>;
   probeCache: Map<string, ProbeResult>;
-  pcAuthToken: string;
-  rcSessions: Map<string, RCSession>;
+  activeReaders: Map<object, number>;
+}
+
+export interface StorageCtx {
   watchHistory: WatchHistory;
   savedList: SavedList;
-  log: LogFn;
-  diskPath(torrent: Torrent, file: TorrentFile): string;
-  isFileComplete(torrent: Torrent, file: TorrentFile): boolean;
-  cleanupTorrentCaches(infoHash: string, torrent?: Torrent): void;
+  rcSessions: Map<string, RCSession>;
+}
+
+export interface StreamTrackingCtx {
   trackStreamOpen(infoHash: string): void;
   trackStreamClose(infoHash: string): void;
   streamTracking(req: Request, res: Response, next: NextFunction): void;
 }
+
+export interface CacheCleanupCtx {
+  cleanupTorrentCaches(infoHash: string, torrent?: Torrent): void;
+}
+
+export interface LogCtx {
+  log: LogFn;
+  pcAuthToken: string;
+}
+
+export interface SearchCtx {
+  searchRegistry: import("./search/registry.js").SearchRegistry;
+}
+
+export interface DebridCtx {
+  debrid: import("./torrent/debrid-service.js").DebridService;
+}
+
+// Full server context — union of all slices for backward compat / server.ts
+export interface ServerContext extends ClientCtx, CacheCtx, StorageCtx, StreamTrackingCtx, CacheCleanupCtx, LogCtx, SearchCtx, DebridCtx {}

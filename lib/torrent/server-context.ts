@@ -18,6 +18,8 @@ import type {
   AvailEntry, IntroEntry, ProbeResult, RCSession, SeekEntry,
   Torrent, TorrentFile, TorrentClient, LogLevel, ServerContext,
 } from "../types.js";
+import { SearchRegistry } from "../search/registry.js";
+import { DebridService } from "./debrid-service.js";
 
 interface CreateContextOverrides {
   client?: TorrentClient;
@@ -44,6 +46,7 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
   registerCache("seekIndexPending", seekIndexPending, "hash:index");
   registerCache("activeFiles", activeFiles as Map<string, unknown>, "hash");
 
+  const activeReaders = new Map<object, number>();
   const introCache = new BoundedMap<IntroEntry>(100); // "tmdbId:season" -> { intro_start, intro_end, source }
   // Not registered with torrent-caches — keyed by tmdbId, not infoHash.
   // BoundedMap LRU eviction handles size; entries are cross-torrent so cleanup-by-hash doesn't apply.
@@ -173,13 +176,16 @@ export function createContext(overrides: CreateContextOverrides = {}): ServerCon
     next();
   }
 
+  const searchRegistry = new SearchRegistry({ log });
+  const debrid = new DebridService();
+
   return {
     get client() { return client; },
     DOWNLOAD_PATH, TRANSCODE_PATH,
     durationCache, seekIndexCache, seekIndexPending,
     activeFiles, completedFiles, streamTracker, activeTranscodes,
-    availabilityCache, AVAIL_TTL, introCache, probeCache, pcAuthToken,
-    rcSessions, watchHistory, savedList,
+    availabilityCache, AVAIL_TTL, introCache, probeCache, activeReaders, pcAuthToken,
+    rcSessions, watchHistory, savedList, searchRegistry, debrid,
     log, diskPath, isFileComplete, cleanupTorrentCaches,
     trackStreamOpen, trackStreamClose, streamTracking,
   };
